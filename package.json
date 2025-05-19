@@ -1,21 +1,22 @@
 {
-  "name": "yuyuko-bot",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "@discordjs/rest": "^2.2.0",
-    "discord-api-types": "^0.38.8",
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.5.0",
-    "firebase-admin": "^13.4.0",
-    "node-fetch": "^3.3.2"
-  }
+    "name": "yuyuko-bot",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "dev": "node index.js",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs",
+    "dependencies": {
+        "@discordjs/rest": "^2.2.0",
+        "discord-api-types": "^0.38.8",
+        "discord.js": "^14.14.1",
+        "dotenv": "^16.5.0",
+        "firebase-admin": "^13.4.0",
+        "node-fetch": "^3.3.2"
+    }
 }
