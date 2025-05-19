@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const db = require("../firebase/firestore");
+const getAnimeCoverImage = require("../utils/getAnimeCoverImage");
 
 // Fungsi untuk menghitung total immersion per jenis untuk user
 async function getTotalByType(userId, mediaType) {
@@ -54,6 +55,8 @@ module.exports = {
         .setRequired(false)),
 
   async execute(interaction) {
+    await interaction.deferReply(); // ⏳ Kasih waktu bot untuk proses async
+
     const media_type = interaction.options.getString("media_type");
     const amount = interaction.options.getNumber("amount");
     const title = interaction.options.getString("title") || "-";
@@ -83,24 +86,25 @@ module.exports = {
     const unit = unitMap[media_type];
     const label = labelMap[media_type];
 
-    const data = {
-      userId: user.id,
-      username: user.username,
-      media_type,
-      amount,
-      title,
-      comment,
-      timestamp: new Date(),
-    };
-
     try {
-      // Tambah data log baru ke Firestore
+      const imageUrl = await getAnimeCoverImage(title);
+
+      const data = {
+        userId: user.id,
+        username: user.username,
+        media_type,
+        amount,
+        title,
+        comment,
+        timestamp: new Date(),
+      };
+
+      // Simpan ke Firestore
       await db.collection("immersion_logs").add(data);
 
-      // Ambil total log setelah data terbaru disimpan
+      // Ambil total setelah disimpan
       const updatedTotal = await getTotalByType(user.id, media_type);
 
-      // Buat embed response
       const embed = new EmbedBuilder()
         .setColor(0x00b0f4)
         .setTitle(`✅ Logged ${amount} ${unit} of ${label}`)
@@ -113,11 +117,18 @@ module.exports = {
         )
         .setTimestamp();
 
-      await interaction.reply({ embeds: [embed] });
+      if (imageUrl) {
+        embed.setImage(imageUrl);
+      } else {
+        console.log(`📭 Tidak ada gambar untuk judul: "${title}"`);
+      }
+
+      // Final reply
+      await interaction.editReply({ embeds: [embed] });
 
     } catch (err) {
       console.error(err);
-      await interaction.reply({ content: "❌ Gagal mencatat immersion.", ephemeral: true });
+      await interaction.editReply({ content: "❌ Gagal mencatat immersion." });
     }
   }
 };
