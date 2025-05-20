@@ -1,6 +1,11 @@
 const { Client, Collection, GatewayIntentBits } = require("discord.js");
 const { DISCORD_TOKEN } = require("./environment");
 const fs = require("fs");
+const {
+    checkRank,
+    onUserCommand, // Mungkin tidak terpakai di sini dengan messageCreate langsung
+    trackUserQuizStart,
+} = require("./ranked/checkRank");
 
 const client = new Client({
     intents: [
@@ -14,7 +19,9 @@ const client = new Client({
 client.commands = new Collection();
 
 // Baca semua file dari folder commands dan daftarkan ke client.commands
-const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+const commandFiles = fs
+    .readdirSync("./commands")
+    .filter((file) => file.endsWith(".js"));
 
 for (const file of commandFiles) {
     const command = require(`./commands/${file}`);
@@ -26,24 +33,16 @@ client.once("ready", () => {
     console.log(`${client.user.tag} is now Active!`);
 });
 
-// 🔁 Support legacy prefix command (opsional)
+// Log dan Cek Rank
 client.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
+    // Hanya catat user yang memulai kuis
+    if (message.content.startsWith("k!quiz")) {
+        trackUserQuizStart(message);
+    }
 
-    const prefix = "k!";
-    if (!message.content.startsWith(prefix)) return;
-
-    const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-
-    const command = client.commands.get(commandName);
-    if (!command) return;
-
-    try {
-        await command.execute(message, args);
-    } catch (error) {
-        console.error(error);
-        message.reply("❌ Terjadi error saat menjalankan perintah.");
+    // Periksa rank HANYA jika pesan berasal dari Kotoba Bot
+    if (message.author.id == "251239170058616833") {
+        await checkRank(message);
     }
 });
 
@@ -59,9 +58,15 @@ client.on("interactionCreate", async (interaction) => {
     } catch (error) {
         console.error(error);
         if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: "❌ Terjadi error saat eksekusi.", ephemeral: true });
+            await interaction.followUp({
+                content: "❌ Terjadi error saat eksekusi.",
+                ephemeral: true,
+            });
         } else {
-            await interaction.reply({ content: "❌ Terjadi error saat eksekusi.", ephemeral: true });
+            await interaction.reply({
+                content: "❌ Terjadi error saat eksekusi.",
+                ephemeral: true,
+            });
         }
     }
 });
