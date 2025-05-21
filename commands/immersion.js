@@ -100,7 +100,8 @@ module.exports = {
       };
 
       // Simpan ke Firestore
-      await db.collection("immersion_logs").add(data);
+      await db.collection("immersion_logs").doc(user.id).collection("logs").add(data);
+
 
       // Ambil total setelah disimpan
       const updatedTotal = await getTotalByType(user.id, media_type);
