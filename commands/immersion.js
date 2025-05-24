@@ -1,22 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { FieldValue } = require("firebase-admin").firestore;
 const db = require("../firebase/firestore");
 const getAnimeCoverImage = require("../utils/getAnimeCoverImage");
-
-// Fungsi untuk menghitung total immersion per jenis untuk user
-async function getTotalByType(userId, mediaType) {
-  const snapshot = await db.collection("immersion_logs")
-    .where("userId", "==", userId)
-    .where("media_type", "==", mediaType)
-    .get();
-
-  let total = 0;
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    total += data.amount || 0;
-  });
-
-  return total;
-}
 
 module.exports = {
   name: "immersion",
@@ -55,7 +40,7 @@ module.exports = {
         .setRequired(false)),
 
   async execute(interaction) {
-    await interaction.deferReply(); // ⏳ Kasih waktu bot untuk proses async
+    await interaction.deferReply();
 
     const media_type = interaction.options.getString("media_type");
     const amount = interaction.options.getNumber("amount");
@@ -74,13 +59,13 @@ module.exports = {
     };
 
     const labelMap = {
-      visual_novel: "Visual Novel 📘",
-      manga: "Manga 📖",
-      anime: "Anime 📺",
-      book: "Book 📚",
-      reading_time: "Reading Time ⏱",
-      listening_time: "Listening Time 🎧",
-      reading: "Reading 📄",
+      visual_novel: "Visual Novel",
+      manga: "Manga",
+      anime: "Anime",
+      book: "Book",
+      reading_time: "Reading Time",
+      listening_time: "Listening Time",
+      reading: "Reading",
     };
 
     const unit = unitMap[media_type];
@@ -99,32 +84,41 @@ module.exports = {
         timestamp: new Date(),
       };
 
-      // Simpan ke Firestore
+      // Simpan ke subcollection khusus user
       await db.collection("immersion_logs").doc(user.id).collection("logs").add(data);
 
+      // Update ke user_stats
+      await db.collection("user_stats").doc(user.id).set({
+        username: user.username,
+        [media_type]: FieldValue.increment(amount)
+      }, { merge: true });
 
-      // Ambil total setelah disimpan
-      const updatedTotal = await getTotalByType(user.id, media_type);
+      // Ambil total terbaru dari user_stats (bukan hitung ulang)
+      const statsDoc = await db.collection("user_stats").doc(user.id).get();
+      const currentTotal = statsDoc.exists && statsDoc.data()[media_type] || 0;
 
       const embed = new EmbedBuilder()
-        .setColor(0x00b0f4)
-        .setTitle(`✅ Logged ${amount} ${unit} of ${label}`)
-        .setDescription(`**Title:** ${title}\n**Comment:** ${comment}`)
+        .setColor(0x3498db)
+        .setTitle("Immersion Log")
         .addFields(
           { name: "Type", value: label, inline: true },
+          { name: "Title", value: title, inline: true },
+          { name: "Comment", value: comment || "-", inline: false },
           { name: "Amount", value: `${amount} ${unit}`, inline: true },
-          { name: `Total ${label}`, value: `${updatedTotal} ${unit}`, inline: true },
+          { name: "Total", value: `${currentTotal} ${unit}`, inline: true },
           { name: "Logged by", value: user.username, inline: true }
         )
-        .setTimestamp();
+        .setTimestamp()
+        .setFooter({ text: `Logged on: ${new Date().toLocaleDateString("id-ID", {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric'
+        })}` });
 
       if (imageUrl) {
-        embed.setImage(imageUrl);
-      } else {
-        console.log(`📭 Tidak ada gambar untuk judul: "${title}"`);
+        embed.setThumbnail(imageUrl);
       }
 
-      // Final reply
       await interaction.editReply({ embeds: [embed] });
 
     } catch (err) {

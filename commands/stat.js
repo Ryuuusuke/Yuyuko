@@ -5,21 +5,30 @@ module.exports = {
   name: "stat",
   data: new SlashCommandBuilder()
     .setName("stat")
-    .setDescription("Lihat total immersion kamu dalam semua jenis media"),
+    .setDescription("Lihat total immersion kamu dari semua jenis media"),
 
   async execute(interaction) {
-    await interaction.deferReply();
+    await interaction.deferReply(); // kasih waktu bot proses
 
     const user = interaction.user;
 
-    const mediaTypes = {
-      visual_novel: "Visual Novel 📘",
-      manga: "Manga 📖",
-      anime: "Anime 📺",
-      book: "Book 📚",
-      reading_time: "Reading Time ⏱",
-      listening_time: "Listening Time 🎧",
-      reading: "Reading 📄",
+    // Ambil data dari user_stats
+    const statDoc = await db.collection("user_stats").doc(user.id).get();
+
+    if (!statDoc.exists) {
+      return await interaction.editReply("🚫 Belum ada data immersion kamu.");
+    }
+
+    const stats = statDoc.data();
+
+    const labelMap = {
+      visual_novel: "Visual Novel",
+      manga: "Manga",
+      anime: "Anime",
+      book: "Book",
+      reading_time: "Reading Time",
+      listening_time: "Listening Time",
+      reading: "Reading",
     };
 
     const unitMap = {
@@ -32,46 +41,28 @@ module.exports = {
       reading: "characters",
     };
 
-    try {
-      const snapshot = await db
-        .collection("immersion_logs")
-        .doc(user.id)
-        .collection("logs")
-        .get();
+    const embed = new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle(`Immersion Stats – ${stats.username || user.username}`)
+      .setTimestamp();
 
+    let hasData = false;
 
-      if (snapshot.empty) {
-        return await interaction.editReply("🚫 Kamu belum mencatat aktivitas immersion apa pun.");
+    for (const type in labelMap) {
+      if (stats[type]) {
+        hasData = true;
+        embed.addFields({
+          name: labelMap[type],
+          value: `${stats[type]} ${unitMap[type]}`,
+          inline: true,
+        });
       }
-
-      const totals = {};
-
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        if (!totals[data.media_type]) totals[data.media_type] = 0;
-        totals[data.media_type] += data.amount || 0;
-      });
-
-      const embed = new EmbedBuilder()
-        .setColor(0x34d399)
-        .setTitle(`📊 Statistik Immersion ${user.username}`)
-        .setTimestamp();
-
-      for (const type in mediaTypes) {
-        if (totals[type]) {
-          embed.addFields({
-            name: mediaTypes[type],
-            value: `${totals[type]} ${unitMap[type]}`,
-            inline: true,
-          });
-        }
-      }
-
-      await interaction.editReply({ embeds: [embed] });
-
-    } catch (err) {
-      console.error(err);
-      await interaction.editReply("❌ Gagal mengambil data statistik.");
     }
+
+    if (!hasData) {
+      embed.setDescription("Belum ada aktivitas yang tercatat.");
+    }
+
+    await interaction.editReply({ embeds: [embed] });
   }
 };
