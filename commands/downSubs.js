@@ -160,32 +160,28 @@ async function handleDownload(interaction, entryId, episode) {
         });
     }
 
+    // Create title with episode number if specified
+    const title = episode ? `${entry.name} ep ${episode}` : entry.name;
+
     // Create main info embed for channel
     const channelEmbed = new EmbedBuilder()
-        .setTitle(`${entry.name}`)
+        .setTitle(title)
         .setColor('#00ff00')
         .setTimestamp()
         .setFooter({ text: 'Jimaku API' });
 
-    // Basic info
+    // Basic info with spacing
     if (entry.english_name) {
         channelEmbed.addFields({ name: 'English Name', value: entry.english_name, inline: true });
     }
     if (entry.japanese_name) {
         channelEmbed.addFields({ name: 'Japanese Name', value: entry.japanese_name, inline: true });
     }
+    
+    // Add empty field for spacing
+    channelEmbed.addFields({ name: '\u200B', value: '\u200B', inline: true });
 
-    // IDs
-    let idInfo = `Entry ID: \`${entry.id}\`\n`;
-    if (entry.anilist_id) {
-        idInfo += `AniList ID: \`${entry.anilist_id}\`\n`;
-    }
-    if (entry.tmdb_id) {
-        idInfo += `TMDB ID: \`${entry.tmdb_id}\`\n`;
-    }
-    channelEmbed.addFields({ name: 'IDs', value: idInfo });
-
-    // Flags
+    // Flags (full width, not inline)
     let flags = [];
     if (entry.flags.anime) flags.push('Anime');
     if (entry.flags.movie) flags.push('Movie');
@@ -194,7 +190,7 @@ async function handleDownload(interaction, entryId, episode) {
     if (entry.flags.unverified) flags.push('Unverified');
     
     if (flags.length > 0) {
-        channelEmbed.addFields({ name: 'Tags', value: flags.join(' • '), inline: true });
+        channelEmbed.addFields({ name: 'Tags', value: flags.join(' • '), inline: false });
     }
 
     channelEmbed.addFields({ 
@@ -206,12 +202,6 @@ async function handleDownload(interaction, entryId, episode) {
             hour: '2-digit',
             minute: '2-digit'
         }), 
-        inline: true 
-    });
-
-    channelEmbed.addFields({ 
-        name: 'Files Available', 
-        value: `${files.length} file(s)`, 
         inline: true 
     });
 
@@ -241,8 +231,7 @@ async function handleDownload(interaction, entryId, episode) {
     let fileList = '';
     const attachments = [];
 
-    // Limit to maximum 2 files to save API limits
-    const limitedFiles = files.slice(0, 2);
+    const limitedFiles = files.slice(0, 4);
 
     for (const file of limitedFiles) {
         const fileSize = (file.size / 1024).toFixed(2);
@@ -278,7 +267,7 @@ async function handleDownload(interaction, entryId, episode) {
     if (files.length > 2) {
         dmEmbed.addFields({
             name: 'Info',
-            value: `Showing 2 of ${files.length} files (limit for API efficiency). Use Entry ID \`${entry.id}\` for specific downloads or use episode parameter.`
+            value: `Showing 4 of ${files.length} files. Use Entry ID \`${entry.id}\` for specific downloads or use episode parameter.`
         });
     }
 
@@ -293,6 +282,7 @@ async function handleDownload(interaction, entryId, episode) {
     } catch (dmError) {
         console.error('Error sending DM:', dmError);
         
+        // If DM fails, send a follow-up message in channel
         await interaction.followUp({
             content: `Cannot send DM. Please check your privacy settings and try again.`,
             ephemeral: true
