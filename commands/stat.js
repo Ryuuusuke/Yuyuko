@@ -232,22 +232,31 @@ async function getHeatmapData(userId, year = null) {
 
   logs.forEach(doc => {
     const data = doc.data();
-    const date = data.timestamps.created.toDate().toISOString().split('T')[0];
+    let dateStr;
+    if (data.timestamps?.date) {
+      dateStr = data.timestamps.date;
+    } else {
+      const dateObj = data.timestamps.created.toDate();
+      dateStr = dateObj.getFullYear() + '-' + 
+                String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + 
+                String(dateObj.getDate()).padStart(2, '0');
+    }
+    
     const mediaType = data.activity.type;
     const amount = data.activity.amount;
     
-    if (!dailyTotals[date]) {
-      dailyTotals[date] = 0;
+    if (!dailyTotals[dateStr]) {
+      dailyTotals[dateStr] = 0;
     }
     
     const points = Math.round(amount * (pointsMultipliers[mediaType] || 1));
-    dailyTotals[date] += points;
+    dailyTotals[dateStr] += points;
   });
 
   return dailyTotals;
 }
 
-// Function to generate bar chart (keeping your existing function)
+// Function to generate bar chart (fixed timezone issues)
 async function generateBarChart(userId, days = null) {
   const width = 1200;
   const height = 800;
@@ -370,11 +379,13 @@ async function generateBarChart(userId, days = null) {
   return canvas.toBuffer('image/png');
 }
 
-// Get time-based data (7 or 30 days) - Stacked version
+// Get time-based data (7 or 30 days) - Fixed timezone issues
 async function getTimeBasedData(userId, days) {
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(endDate.getDate() - days);
+  const today = new Date();
+  const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+  const startDate = new Date(endDate);
+  startDate.setDate(endDate.getDate() - days + 1);
+  startDate.setHours(0, 0, 0, 0);
 
   const logs = await db.collection("users")
     .doc(userId)
@@ -390,19 +401,31 @@ async function getTimeBasedData(userId, days) {
 
   logs.forEach(doc => {
     const data = doc.data();
-    const date = data.timestamps.created.toDate().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const mediaType = data.activity.type;
+    let dateStr;
     
-    if (!dailyData[date]) {
-      dailyData[date] = {};
+    // Prioritas menggunakan timestamps.date jika ada
+    if (data.timestamps?.date) {
+      dateStr = data.timestamps.date;
+    } else {
+      // Convert Firebase Timestamp ke local date string
+      const dateObj = data.timestamps.created.toDate();
+      dateStr = dateObj.getFullYear() + '-' + 
+                String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + 
+                String(dateObj.getDate()).padStart(2, '0');
     }
     
-    if (!dailyData[date][mediaType]) {
-      dailyData[date][mediaType] = 0;
+    const mediaType = data.activity.type;
+    
+    if (!dailyData[dateStr]) {
+      dailyData[dateStr] = {};
+    }
+    
+    if (!dailyData[dateStr][mediaType]) {
+      dailyData[dateStr][mediaType] = 0;
     }
     
     const points = Math.round(data.activity.amount * (getPointsMultiplier(mediaType) || 1));
-    dailyData[date][mediaType] += points;
+    dailyData[dateStr][mediaType] += points;
     mediaTypes.add(mediaType);
   });
 
@@ -410,10 +433,19 @@ async function getTimeBasedData(userId, days) {
   const labels = [];
   const allDates = [];
   
+  // Generate semua tanggal dalam range
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = d.getFullYear() + '-' + 
+                    String(d.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(d.getDate()).padStart(2, '0');
     allDates.push(dateStr);
-    labels.push(d.toLocaleDateString('id-ID', { month: 'short', day: 'numeric' }));
+    
+    // Format label yang lebih readable
+    labels.push(d.toLocaleDateString('id-ID', { 
+      month: 'short', 
+      day: 'numeric',
+      weekday: 'short'
+    }));
   }
 
   // Create datasets for each media type

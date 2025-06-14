@@ -1,7 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const db = require("../firebase/firestore");
 const getCoverImageByType = require("../utils/getCoverImage");
-const { getUserStreak } = require("../utils/streak");
+const { updateUserStreak } = require("../utils/streak"); 
+const { getUserStreakByMedia, getUserStreak } = require("../utils/streak"); 
 const { getMediaInfo, searchAniList, getAniListInfoById } = require("../utils/anilistAPI"); // Updated import
 const { getVNInfo, getVNInfoById, searchVNs } = require("../utils/vndbAPI");
 const youtubedl = require("youtube-dl-exec");
@@ -251,7 +252,19 @@ module.exports = {
 
     const unit = unitMap[media_type];
     const label = labelMap[media_type];
+    // Ambil waktu lokal dengan offset timezone
+    const now = new Date();
+    const localDate = new Date(
+      now.getFullYear(), now.getMonth(), now.getDate()
+    );
+    
+    const dateStr = [
+      localDate.getFullYear(),
+      String(localDate.getMonth() + 1).padStart(2, '0'),
+      String(localDate.getDate()).padStart(2, '0')
+    ].join('-'); // hasilnya: "2025-06-15"
 
+    
     try {
       // Get image URL with priority: YouTube thumbnail > VNDB image > AniList image > fallback
       let imageUrl = null;
@@ -263,8 +276,7 @@ module.exports = {
         imageUrl = thumbnail;
       } else {
         imageUrl = await getCoverImageByType(media_type, rawTitle);
-      }
-
+      }  
       // Create immersion log entry with better structure
       const logData = {
         user: {
@@ -298,10 +310,10 @@ module.exports = {
           } : null
         },
         timestamps: {
-          created: new Date(),
-          date: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
-          month: new Date().toISOString().slice(0, 7), // YYYY-MM format
-          year: new Date().getFullYear()
+          created: now,
+          date: dateStr,
+          month: dateStr.slice(0, 7), // YYYY-MM
+          year: localDate.getFullYear()
         }
       };
 
@@ -316,29 +328,45 @@ module.exports = {
       if (userStatsDoc.exists) {
         currentStats = userStatsDoc.data().stats || {};
       }
-
-      // Initialize stats if not exists
+      
+      // Pastikan stats diinisialisasi dulu
       if (!currentStats[media_type]) {
         currentStats[media_type] = {
           total: 0,
           sessions: 0,
           lastActivity: null,
           bestStreak: 0,
-          currentStreak: 0
+          currentStreak: 0,
+          unit: unit,
+          label: label
         };
       }
 
-      // Update stats
+      // Update nilai-nilai utama
       const newTotal = currentStats[media_type].total + amount;
       const newSessions = currentStats[media_type].sessions + 1;
-      
+
+      // Hitung streak terbaru dari semua aktivitas user
+      await updateUserStreak(user.id); 
+      // Global streak
+      const { streak: globalStreak, longest: globalLongest } = await getUserStreak(user.id);
+      // Per-media streak
+      const { streak: mediaStreak, longest: mediaLongest } = await getUserStreakByMedia(user.id, media_type);
+          
+      // Assign dengan aman
+      const safeStreak = typeof mediaStreak === 'number' ? mediaStreak : 0;
+      const safeBest = typeof mediaLongest === 'number' ? mediaLongest : 0;
+        
+      // Masukkan kembali nilai yang diperbarui ke stats media ini
       currentStats[media_type] = {
         ...currentStats[media_type],
         total: newTotal,
         sessions: newSessions,
         lastActivity: new Date(),
         unit: unit,
-        label: label
+        label: label,
+        currentStreak: mediaStreak || 0,
+        bestStreak: mediaLongest || 0
       };
 
       // Update user document with comprehensive data
@@ -363,9 +391,6 @@ module.exports = {
         }
       }, { merge: true });
 
-      // Get streak information
-      const { streak, longest } = await getUserStreak(user.id);
-      
       // Use the updated total for display
       const updatedTotal = newTotal;
 
@@ -389,7 +414,6 @@ module.exports = {
         // For other media types with title
         description = `**${rawTitle}**`;
       }
-
       // Create compact fields
       const fields = [];
       
@@ -397,7 +421,7 @@ module.exports = {
       fields.push(
         { name: `Progress`, value: `+${amount} ${unit}`, inline: true },
         { name: `Total`, value: `${updatedTotal.toLocaleString()} ${unit}`, inline: true },
-        { name: `Streak`, value: `${streak} day${streak !== 1 ? 's' : ''}`, inline: true }
+        { name: `Streak`, value: `${globalStreak} day${globalStreak === 1 ? '' : 's'}`, inline: true }
       );
 
       // Add VN-specific info if available
