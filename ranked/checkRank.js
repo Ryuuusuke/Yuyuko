@@ -1,7 +1,7 @@
 const activeQuizzes = new Map(); // Menyimpan userId yang sedang ikut quiz
 
-const kotobaBotId = "251239170058616833";
-const level1RoleId = "1372825348189978665";
+const kotobaBotId = "";
+const level1RoleId = "";
 
 function trackUserQuizStart(message) {
     if (message.content === "k!quiz testlevel1 hardcore mmq=3") {

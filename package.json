@@ -13,10 +13,14 @@
     "type": "commonjs",
     "dependencies": {
         "@discordjs/rest": "^2.2.0",
+        "axios": "^1.9.0",
+        "canvas": "^3.1.0",
+        "chart.js": "^4.4.9",
         "discord-api-types": "^0.38.8",
         "discord.js": "^14.14.1",
         "dotenv": "^16.5.0",
         "firebase-admin": "^13.4.0",
-        "node-fetch": "^3.3.2"
+        "node-fetch": "^3.3.2",
+        "youtube-dl-exec": "^3.0.22"
     }
 }

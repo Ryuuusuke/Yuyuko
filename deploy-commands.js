@@ -1,41 +1,26 @@
-const { Client, GatewayIntentBits, REST, Routes } = require("discord.js");
-const { DISCORD_TOKEN, CLIENT_ID } = require("./environment");
-const fs = require("fs");
+const { REST, Routes } = require("discord.js");
+const { CLIENT_ID } = require("./environment");
 
-const commands = [];
-const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
-for (const file of commandFiles) {
-  const command = require(`./commands/${file}`);
-  commands.push(command.data.toJSON());
-}
+// Auto deploy command saat masuk guild baru
+client.on("guildCreate", async (guild) => {
+  console.log(`🆕 Bot ditambahkan ke server: ${guild.name} (${guild.id})`);
 
-// Buat client Discord buat ambil guildId
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
-client.once("ready", async () => {
-  const guild = client.guilds.cache.first(); // ambil guild pertama yang ditemukan
-  if (!guild) {
-    console.log("❌ Bot belum masuk ke server mana pun.");
-    process.exit(1);
+  const commands = [];
+  const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));
+  for (const file of commandFiles) {
+    const command = require(`./commands/${file}`);
+    commands.push(command.data.toJSON());
   }
-
-  const guildId = guild.id;
-  console.log(`🔍 Guild ID ditemukan: ${guildId}`);
 
   const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
 
   try {
-    console.log("⏳ Mendaftarkan slash command ke Discord...");
     await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, guildId),
+      Routes.applicationGuildCommands(CLIENT_ID, guild.id),
       { body: commands }
     );
-    console.log("✅ Slash command berhasil didaftarkan ke guild!");
-  } catch (error) {
-    console.error("❌ Gagal mendaftarkan command:", error);
-  } finally {
-    client.destroy(); // logout bot
+    console.log(`✅ Slash command berhasil di-sync ke server ${guild.name} (${guild.id})`);
+  } catch (err) {
+    console.error(`❌ Gagal sync command ke ${guild.name}:`, err);
   }
 });
-
-client.login(DISCORD_TOKEN);
