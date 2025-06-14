@@ -13,14 +13,14 @@ function getColor(value, max) {
   return colors[index];
 }
 
-// ✅ ISO 8601: Monday = 0, Sunday = 6 (sesuai dengan index array)
+//ISO 8601: Monday = 0, Sunday = 6 (sesuai dengan index array)
 function getDayOfWeek(date) {
   const day = date.getDay();
   // Konversi: Sunday(0) -> 6, Monday(1) -> 0, ..., Saturday(6) -> 5
   return day === 0 ? 6 : day - 1;
 }
 
-// ✅ ISO 8601: Minggu pertama mengandung hari Kamis pertama
+//ISO 8601: Minggu pertama mengandung hari Kamis pertama
 function getISOWeek(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
