@@ -2,6 +2,7 @@ const { Client, Collection, GatewayIntentBits, REST, Routes } = require("discord
 const { DISCORD_TOKEN, CLIENT_ID } = require("./environment");
 const fs = require("fs");
 const path = require("path");
+const logCommand = require('./commands/log.js');
 const {
     checkRank,
     onUserCommand, // Mungkin tidak terpakai di sini dengan messageCreate langsung
@@ -28,6 +29,7 @@ for (const file of commandFiles) {
     const command = require(filePath);
     client.commands.set(command.data.name, command);
 }
+
 
 // ✅ Auto-deploy command ke semua guild saat bot online
 async function deployCommandsToAllGuilds() {
@@ -56,10 +58,15 @@ async function deployCommandsToAllGuilds() {
     }
 }
 
-// Ketika bot berhasil login
 client.once("ready", async () => {
     console.log(`${client.user.tag} is now Active!`);
     await deployCommandsToAllGuilds();
+});
+
+client.on('interactionCreate', async interaction => {
+    if (interaction.isButton()) {
+        await logCommand.handleButton(interaction);
+    }
 });
 
 // Log dan Cek Rank

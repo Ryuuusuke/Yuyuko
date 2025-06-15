@@ -1,5 +1,6 @@
 # Credentials
 .env
+firebase-key.json
 
 # Modules
 node_modules
