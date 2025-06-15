@@ -123,7 +123,8 @@ module.exports = {
               dumpSingleJson: true,
               noWarnings: true,
               noCallHome: true,
-              preferFreeFormats: true
+              preferFreeFormats: true,
+              cookies: '../cookies.txt'
             });
 
             if (info?.title) {
