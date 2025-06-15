@@ -1,44 +1,43 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 
 module.exports = {
-  name: "help",
   data: new SlashCommandBuilder()
     .setName("help")
-    .setDescription("Lihat daftar command yang tersedia beserta penjelasannya."),
+    .setDescription("Lihat panduan penggunaan bot immersion tracker"),
 
   async execute(interaction) {
     const embed = new EmbedBuilder()
-      .setColor(0x00d4aa)
-      .setTitle("📘 Yuyuko Immersion Tracker Help")
-      .setDescription("Berikut adalah daftar command yang bisa kamu gunakan untuk mencatat dan melihat progres immersion kamu:")
+      .setColor(0x00bfff)
+      .setTitle("📘 Panduan Penggunaan Yuyuko Bot")
+      .setDescription("Berikut beberapa command dan fungsinya:")
       .addFields(
         {
-          name: "`/immersion`",
-          value:
-            "Catat aktivitas immersion kamu untuk media seperti Anime, Manga, Visual Novel, Buku, Listening (via YouTube), dll.\n" +
-            "- Bisa tambahkan `title`, `comment`, dan khusus untuk listening setelah enter akan diarahkan untuk input link youtube.\n" +
-            "- Otomatis mencari gambar dan judul media dari AniList atau YouTube jika tersedia.",
+          name: "/immersion",
+          value: "Catat aktivitas immersion kamu seperti nonton anime, baca manga, VN, buku, dll.",
         },
         {
-          name: "`/stat`",
-          value:
-            "Lihat statistik immersion kamu.\n" +
-            "- Bisa langsung tekan `Enter` tanpa memilih opsi apa pun untuk melihat statistik umum.\n" +
-            "- Gunakan `visual_type:barchart` dan bisa pilih `days:7` atau `30` untuk melihat grafik batang.\n" +
-            "- Gunakan `visual_type:heatmap` dan pilih `year:2025` (opsional) untuk melihat heatmap tahunan.\n" +
-            "Contoh:\n" +
-            "• `/stat`\n" +
-            "• `/stat visual_type:barchart days:7`\n" +
-            "• `/stat visual_type:heatmap year:2025`",
+          name: "/stat",
+          value: "Lihat statistik immersion kamu dalam bentuk teks atau grafik bar/heatmap.",
         },
         {
-          name: "`/help`",
-          value: "Menampilkan pesan bantuan ini.",
+          name: "/log",
+          value: "Lihat dan kelola log aktivitas immersion kamu dalam 24 jam atau 7 hari terakhir. Bisa filter berdasarkan media dan hapus log langsung via tombol.",
+        },
+        {
+          name: "/subs",
+          value: "Cari dan download subtitle anime dari **Jimaku.cc** berdasarkan judul dan episode. Subtitle dikirim ke DM kamu jika tersedia.",
+        },
+        {
+          name: "Tips",
+          value:
+            "- Gunakan autocomplete untuk memilih judul anime/manga/VN.\n" +
+            "- Kamu bisa **hapus log** dengan klik tombol `Delete xx` di /log.\n" +
+            "- Jika subtitle Jimaku tidak bisa dikirim via DM, pastikan kamu mengaktifkan DM jangan private.",
         }
       )
       .setFooter({
-        text: "Yuyuko Immersion Bot • Stay consistent, stay immersed!",
-        iconURL: interaction.client.user.displayAvatarURL(),
+        text: "Yuyuko • Immersion Tracker",
+        iconURL: interaction.client.user.displayAvatarURL({ size: 32 }),
       })
       .setTimestamp();
 
