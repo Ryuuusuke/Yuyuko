@@ -20,7 +20,6 @@
         "discord.js": "^14.14.1",
         "dotenv": "^16.5.0",
         "firebase-admin": "^13.4.0",
-        "node-fetch": "^3.3.2",
-        "youtube-dl-exec": "^3.0.22"
+        "node-fetch": "^3.3.2"
     }
 }
