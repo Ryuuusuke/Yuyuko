@@ -5,7 +5,62 @@ const { updateUserStreak } = require("../utils/streak");
 const { getUserStreakByMedia, getUserStreak } = require("../utils/streak"); 
 const { getMediaInfo, searchAniList, getAniListInfoById } = require("../utils/anilistAPI");
 const { getVNInfo, getVNInfoById, searchVNs } = require("../utils/vndbAPI");
-const youtubedl = require("youtube-dl-exec");
+const axios = require("axios"); // Add this for YouTube API calls
+
+// YouTube API configuration
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Add your API key to environment variables
+
+// Function to extract video ID from YouTube URL
+function extractYouTubeVideoId(url) {
+  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+  const match = url.match(regex);
+  return match ? match[1] : url; // Return the ID or the original string if it's already an ID
+}
+
+// Function to get YouTube video info using YouTube Data API v3
+async function getYouTubeVideoInfo(videoId) {
+  try {
+    const response = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+      params: {
+        part: 'snippet,contentDetails',
+        id: videoId,
+        key: YOUTUBE_API_KEY
+      }
+    });
+
+    if (response.data.items && response.data.items.length > 0) {
+      const video = response.data.items[0];
+      const snippet = video.snippet;
+      const contentDetails = video.contentDetails;
+      
+      // Parse duration from ISO 8601 format (PT1H2M10S) to seconds
+      const duration = parseDuration(contentDetails.duration);
+      
+      return {
+        title: snippet.title,
+        duration: duration, // in seconds
+        thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.default?.url
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("YouTube API Error:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Function to parse ISO 8601 duration format to seconds
+function parseDuration(duration) {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  
+  const hours = parseInt(match[1]) || 0;
+  const minutes = parseInt(match[2]) || 0;
+  const seconds = parseInt(match[3]) || 0;
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
 
 // Function to normalize YouTube URL
 function normalizeYouTubeUrl(inputUrl) {
@@ -87,7 +142,7 @@ module.exports = {
     let vndbInfo = null;
     let url = null;
 
-    // Listening URL logic (unchanged)
+    // Listening URL logic with YouTube API
     if (media_type === "listening") {
       const urlEmbed = new EmbedBuilder()
         .setColor(0x0099ff)
@@ -117,25 +172,27 @@ module.exports = {
           url = response.content.trim();
           
           try {
-            const normalizedUrl = normalizeYouTubeUrl(url);
+            // Extract video ID from URL or use the input directly if it's already an ID
+            const videoId = extractYouTubeVideoId(url);
             
-            const info = await youtubedl(normalizedUrl, {
-              dumpSingleJson: true,
-              noWarnings: true,
-              noCallHome: true,
-              preferFreeFormats: true
-            });
+            // Get video info from YouTube API
+            const videoInfo = await getYouTubeVideoInfo(videoId);
+            
+            if (videoInfo) {
+              if (videoInfo.title) {
+                rawTitle = videoInfo.title;
+              }
 
-            if (info?.title) {
-              rawTitle = info.title;
-            }
+              if (videoInfo.duration) {
+                amount = Math.ceil(videoInfo.duration / 60); // Convert seconds to minutes
+              }
 
-            if (info?.duration) {
-              amount = Math.ceil(info.duration / 60);
-            }
-
-            if (info?.thumbnail) {
-              thumbnail = info.thumbnail;
+              if (videoInfo.thumbnail) {
+                thumbnail = videoInfo.thumbnail;
+              }
+              
+              // Normalize the URL for storage
+              url = `https://youtube.com/watch?v=${videoId}`;
             }
             
             try {
@@ -145,9 +202,9 @@ module.exports = {
             }
             
           } catch (err) {
-            console.error("❌ Gagal mengambil info dari YouTube:", err);
+            console.error("❌ Gagal mengambil info dari YouTube API:", err);
             await interaction.followUp({
-              content: "❌ Gagal mengambil data video dari YouTube. Melanjutkan tanpa info video...",
+              content: "❌ Gagal mengambil data video dari YouTube API. Melanjutkan tanpa info video...",
               ephemeral: true
             });
             url = null;
