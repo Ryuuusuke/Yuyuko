@@ -2,137 +2,111 @@ const { Client, Collection, GatewayIntentBits, REST, Routes } = require("discord
 const { DISCORD_TOKEN, CLIENT_ID } = require("./environment");
 const fs = require("fs");
 const path = require("path");
+const handleMention = require('./commands/geminiReply');
 const logCommand = require('./commands/log.js');
-const {
-    checkRank,
-    onUserCommand, // Mungkin tidak terpakai di sini dengan messageCreate langsung
-    trackUserQuizStart,
-} = require("./ranked/checkRank");
+const { checkRank, trackUserQuizStart } = require("./ranked/checkRank");
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
     ],
 });
 
-// Inisialisasi koleksi command
 client.commands = new Collection();
-
-// Load commands - menggunakan path yang lebih robust
 const commandsPath = path.join(__dirname, 'commands');
+if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath, { recursive: true });
+
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+const validCommands = [];
 
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
-    const command = require(filePath);
-    client.commands.set(command.data.name, command);
+    try {
+        const command = require(filePath);
+        if (command?.data?.name && command?.execute) {
+            client.commands.set(command.data.name, command);
+            validCommands.push(command);
+        }
+    } catch (error) {
+        console.error(`Error loading command ${file}:`, error.message);
+    }
 }
 
-
-// ✅ Auto-deploy command ke semua guild saat bot online
 async function deployCommandsToAllGuilds() {
     const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
-    const commands = [];
-
-    for (const file of commandFiles) {
-        const filePath = path.join(commandsPath, file);
-        const command = require(filePath);
-        commands.push(command.data.toJSON());
-    }
+    const commands = validCommands.map(cmd => cmd.data.toJSON());
+    if (!commands.length) return;
 
     const guilds = client.guilds.cache;
-
-    console.log(`🔁 Deploy ulang command ke ${guilds.size} server...`);
     for (const [guildId, guild] of guilds) {
         try {
-            await rest.put(
-                Routes.applicationGuildCommands(CLIENT_ID, guildId),
-                { body: commands }
-            );
-            console.log(`✅ ${guild.name} (${guildId}) -> OK`);
+            await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
+            console.log(`✅ ${guild.name} (${guildId})`);
         } catch (err) {
-            console.error(`❌ ${guild.name} (${guildId}) -> ERROR`, err);
+            console.error(`${guild.name} (${guildId}) -> ERROR:`, err.message);
         }
     }
 }
 
 client.once("ready", async () => {
-    console.log(`${client.user.tag} is now Active!`);
+    console.log(`${client.user.tag} is now online`);
     await deployCommandsToAllGuilds();
 });
 
-client.on('interactionCreate', async interaction => {
-    if (interaction.isButton()) {
-        await logCommand.handleButton(interaction);
-    }
-});
+client.on("interactionCreate", async interaction => {
+    try {
+        if (interaction.isButton()) return await logCommand.handleButton(interaction);
 
-// Log dan Cek Rank
-client.on("messageCreate", async (message) => {
-    // Hanya catat user yang memulai kuis
-    if (message.content.startsWith("k!quiz")) {
-        trackUserQuizStart(message);
-    }
-
-    // Periksa rank HANYA jika pesan berasal dari Kotoba Bot
-    if (message.author.id == "251239170058616833") {
-        await checkRank(message);
-    }
-});
-
-// Handle slash command interactions (gabungan dari kedua versi)
-client.on('interactionCreate', async interaction => {
-    // Handle autocomplete interactions
-    if (interaction.isAutocomplete()) {
         const command = client.commands.get(interaction.commandName);
-        
-        if (!command) {
-            console.error(`No command matching ${interaction.commandName} was found.`);
-            return;
-        }
-        
-        try {
-            if (command.autocomplete) {
-                await command.autocomplete(interaction);
-            } else if (command.execute) {
-                // Some commands handle autocomplete in their execute method
-                await command.execute(interaction);
-            }
-        } catch (error) {
-            console.error('Error handling autocomplete:', error);
-        }
-        return;
-    }
+        if (!command) return;
 
-    // Handle regular slash command interactions
-    if (interaction.isChatInputCommand()) {
-        const command = client.commands.get(interaction.commandName);
-        
-        if (!command) {
-            console.error(`No command matching ${interaction.commandName} was found.`);
-            return;
+        if (interaction.isAutocomplete() && command.autocomplete) {
+            return await command.autocomplete(interaction);
         }
 
-        try {
+        if (interaction.isChatInputCommand()) {
             await command.execute(interaction);
-        } catch (error) {
-            console.error('Error executing command:', error);
-            
-            const errorMessage = { 
-                content: '❌ Terjadi error saat eksekusi command!', 
-                ephemeral: true 
-            };
-            
+        }
+    } catch (error) {
+        console.error('Error in interaction:', error.message);
+        const reply = {
+            content: 'Terjadi error saat menjalankan perintah.',
+            ephemeral: true
+        };
+        try {
             if (interaction.replied || interaction.deferred) {
-                await interaction.followUp(errorMessage);
+                await interaction.followUp(reply);
             } else {
-                await interaction.reply(errorMessage);
+                await interaction.reply(reply);
             }
+        } catch (err) {
+            console.error('Error replying to interaction:', err.message);
         }
     }
 });
 
-// Login ke Discord
-client.login(DISCORD_TOKEN);
+client.on("messageCreate", async (message) => {
+    try {
+        if (message.mentions.has(client.user)) await handleMention(message);
+        if (message.content.startsWith("k!quiz")) trackUserQuizStart(message);
+        if (message.author.id === "251239170058616833") await checkRank(message);
+    } catch (error) {
+        console.error('Error in messageCreate:', error.message);
+    }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+
+client.login(DISCORD_TOKEN).catch(error => {
+    console.error('Login failed:', error.message);
+    process.exit(1);
+});

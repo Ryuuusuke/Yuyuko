@@ -1,5 +1,14 @@
-const {SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle} = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} = require('discord.js');
 const emojis = require('../utils/emojis');
+
+const EMOJIS_PER_PAGE = 25;
+const BUTTONS_PER_ROW = 5;
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -17,9 +26,8 @@ module.exports = {
       await interaction.deferReply({ ephemeral: true });
       const input = interaction.options.getString('pesan');
 
-      // Validasi input
       if (!input?.trim()) {
-        return interaction.editReply({ 
+        return interaction.editReply({
           content: 'Input pesan tidak valid.',
           embeds: [],
           components: []
@@ -44,38 +52,29 @@ module.exports = {
         channelId = interaction.channelId;
       }
 
-      // Validasi dan filter emoji yang lebih ketat
-      const validEmojis = [];
-      if (Array.isArray(emojis)) {
-        for (const emoji of emojis) {
-          if (emoji && 
-              typeof emoji === 'object' && 
-              typeof emoji.id === 'string' && 
-              emoji.id.match(/^\d{17,19}$/) && // Validasi format ID emoji
-              typeof emoji.name === 'string' &&
-              emoji.name.length > 0) {
-            validEmojis.push(emoji);
-            if (validEmojis.length >= 20) break; // Maksimal 20 emoji
-          }
-        }
-      }
+      const validEmojis = Array.isArray(emojis)
+        ? emojis.filter(e =>
+            e &&
+            typeof e === 'object' &&
+            typeof e.id === 'string' &&
+            /^\d{17,19}$/.test(e.id) &&
+            typeof e.name === 'string' &&
+            e.name.length > 0)
+        : [];
 
       if (validEmojis.length === 0) {
-        return interaction.editReply({ 
+        return interaction.editReply({
           content: 'Emoji animasi tidak ditemukan atau tidak valid.',
           embeds: [],
           components: []
         });
       }
 
-      // Fetch channel dengan error handling yang lebih baik
       let channel;
       try {
         channel = await interaction.client.channels.fetch(channelId);
-        if (!channel || !channel.isTextBased()) {
-          throw new Error('Channel bukan text channel');
-        }
-      } catch (error) {
+        if (!channel || !channel.isTextBased()) throw new Error('Not text-based');
+      } catch {
         return interaction.editReply({
           content: 'Channel tidak ditemukan atau bot tidak memiliki akses.',
           embeds: [],
@@ -83,14 +82,11 @@ module.exports = {
         });
       }
 
-      // Fetch message dengan error handling yang lebih baik
       let message;
       try {
         message = await channel.messages.fetch(messageId);
-        if (!message) {
-          throw new Error('Message not found');
-        }
-      } catch (error) {
+        if (!message) throw new Error('Message not found');
+      } catch {
         return interaction.editReply({
           content: `Pesan tidak ditemukan di <#${channelId}>.`,
           embeds: [],
@@ -98,21 +94,18 @@ module.exports = {
         });
       }
 
-      // Cek permission bot di channel target
       const botMember = channel.guild?.members.cache.get(interaction.client.user.id);
       const channelPermissions = channel.permissionsFor(botMember);
-      
+
       if (!channelPermissions?.has(['ViewChannel', 'AddReactions'])) {
         return interaction.editReply({
-          content: `Bot tidak memiliki permission untuk mereact di <#${channelId}>. Pastikan bot memiliki permission **View Channel** dan **Add Reactions**.`,
+          content: `Bot tidak memiliki permission untuk mereact di <#${channelId}>.`,
           embeds: [],
           components: []
         });
       }
 
-      // Cek apakah pesan bisa direact (tidak terlalu lama, dll)
-      const messageAge = Date.now() - message.createdTimestamp;
-      if (messageAge > 14 * 24 * 60 * 60 * 1000) { // 14 hari
+      if (Date.now() - message.createdTimestamp > 14 * 24 * 60 * 60 * 1000) {
         return interaction.editReply({
           content: 'Pesan terlalu lama (lebih dari 14 hari) untuk direact.',
           embeds: [],
@@ -120,7 +113,6 @@ module.exports = {
         });
       }
 
-      // Buat Embed dengan validasi
       const embed = new EmbedBuilder()
         .setTitle('🎭 Pilih Emoji untuk React')
         .setDescription(
@@ -131,161 +123,117 @@ module.exports = {
         .setColor(0x00AE86)
         .setTimestamp();
 
-      // Buat Button Rows dengan validasi yang lebih ketat
-      const rows = [];
-      const maxRows = 5;
-      const maxButtonsPerRow = 5;
+      let currentPage = 0;
 
-      for (let i = 0; i < validEmojis.length && rows.length < maxRows; i += maxButtonsPerRow) {
-        const row = new ActionRowBuilder();
-        const emojiSlice = validEmojis.slice(i, i + maxButtonsPerRow);
-        
-        for (let j = 0; j < emojiSlice.length; j++) {
-          const emoji = emojiSlice[j];
-          try {
-            const button = new ButtonBuilder()
-              .setCustomId(`react_${emoji.id}_${channelId}_${messageId}`)
-              .setStyle(ButtonStyle.Secondary);
+      const generateEmojiRows = (page) => {
+        const start = page * EMOJIS_PER_PAGE;
+        const pageEmojis = validEmojis.slice(start, start + EMOJIS_PER_PAGE);
 
-            // Validasi emoji sebelum set
-            if (emoji.id && emoji.id.match(/^\d{17,19}$/)) {
-              button.setEmoji({ id: emoji.id });
-            } else {
-              continue; // Skip emoji yang tidak valid
-            }
-
-            row.addComponents(button);
-          } catch (buttonError) {
-            console.error(`Error creating button for emoji ${emoji.id}:`, buttonError);
-            continue; // Skip emoji yang bermasalah
+        const rows = [];
+        for (let i = 0; i < pageEmojis.length; i += BUTTONS_PER_ROW) {
+          const row = new ActionRowBuilder();
+          const slice = pageEmojis.slice(i, i + BUTTONS_PER_ROW);
+          for (const emoji of slice) {
+            row.addComponents(
+              new ButtonBuilder()
+                .setCustomId(`react_${emoji.id}_${channelId}_${messageId}`)
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji({ id: emoji.id })
+            );
           }
-        }
-
-        // Hanya tambahkan row jika ada button
-        if (row.components.length > 0) {
           rows.push(row);
         }
-      }
 
-      if (rows.length === 0) {
-        return interaction.editReply({
-          content: 'Tidak ada emoji valid yang dapat ditampilkan.',
-          embeds: [],
-          components: []
-        });
-      }
+        const totalPages = Math.ceil(validEmojis.length / EMOJIS_PER_PAGE);
+        if (totalPages > 1) {
+          const navRow = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(`prev_page_${page}_${channelId}_${messageId}`)
+                .setLabel("Prev")
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page === 0),
+              new ButtonBuilder()
+                .setCustomId(`next_page_${page}_${channelId}_${messageId}`)
+                .setLabel("Next")
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(page >= totalPages - 1)
+            );
+          rows.push(navRow);
+        }
 
-      // Edit reply dengan error handling
-      try {
-        await interaction.editReply({
-          content: null,
-          embeds: [embed],
-          components: rows
-        });
-      } catch (editError) {
-        console.error('Error editing reply:', editError);
-        return interaction.editReply({
-          content: 'Terjadi kesalahan saat menampilkan emoji. Silakan coba lagi.',
-          embeds: [],
-          components: []
-        });
-      }
+        return rows;
+      };
 
-      // Collector dengan timeout yang lebih pendek - menggunakan interaction yang sama
-      const filter = i => i.user.id === interaction.user.id && i.customId.startsWith('react_');
+      await interaction.editReply({
+        content: null,
+        embeds: [embed],
+        components: generateEmojiRows(currentPage)
+      });
+
       const collector = interaction.channel.createMessageComponentCollector({
-        filter,
-        max: 1,
-        time: 30000
+        filter: i =>
+          i.user.id === interaction.user.id &&
+          (i.customId.startsWith('react_') || i.customId.startsWith('prev_page_') || i.customId.startsWith('next_page_')),
+        time: 60000
       });
 
       collector.on('collect', async button => {
         try {
-          const customIdParts = button.customId.split('_');
-          const emojiId = customIdParts[1];
-          
-          // Validasi emoji ID lagi sebelum react
-          if (!emojiId || !emojiId.match(/^\d{17,19}$/)) {
-            throw new Error('Invalid emoji ID');
-          }
+          if (button.customId.startsWith('react_')) {
+            const [, emojiId] = button.customId.split('_');
 
-          // Cari emoji yang dipilih dari array
-          const selectedEmoji = validEmojis.find(e => e.id === emojiId);
-          const emojiName = selectedEmoji ? selectedEmoji.name : 'emoji';
+            const selectedEmoji = validEmojis.find(e => e.id === emojiId);
+            const emojiName = selectedEmoji?.name ?? 'emoji';
 
-          await message.react(emojiId);
+            await message.react(emojiId);
 
-          const emojiUrl = `https://cdn.discordapp.com/emojis/${emojiId}.gif`;
-          const emojiUrlFallback = `https://cdn.discordapp.com/emojis/${emojiId}.png`;
+            const successEmbed = new EmbedBuilder()
+              .setTitle('React Berhasil')
+              .setDescription(`Pesan berhasil direact dengan emoji **${emojiName}**`)
+              .setColor(0x00FF00)
+              .setTimestamp()
+              .setImage(`https://cdn.discordapp.com/emojis/${emojiId}.gif`)
+              .setFooter({ text: `Emoji ID: ${emojiId}` });
 
-          const successEmbed = new EmbedBuilder()
-            .setTitle('✅ React Berhasil')
-            .setDescription(`Pesan berhasil direact dengan emoji **${emojiName}**`)
-            .setColor(0x00FF00)
-            .setTimestamp()
-            .setImage(emojiUrl)
-            .setFooter({ text: `Emoji ID: ${emojiId}` });
-
-          await button.update({
-            content: null,
-            embeds: [successEmbed],
-            components: []
-          });
-
-        } catch (err) {
-          console.error('Gagal react:', err);
-          
-          let errorMessage = 'Gagal mereact pesan.';
-          
-          if (err.code === 10014) {
-            errorMessage = 'Emoji tidak ditemukan atau tidak valid.';
-          } else if (err.code === 50013) {
-            errorMessage = 'Bot tidak memiliki permission untuk mereact di channel ini.';
-          } else if (err.code === 50035) {
-            errorMessage = 'Format emoji tidak valid.';
-          } else if (err.message?.includes('Missing Permissions')) {
-            errorMessage = 'Bot tidak memiliki permission yang diperlukan.';
-          } else if (err.message?.includes('Unknown Emoji')) {
-            errorMessage = 'Emoji tidak dikenali atau tidak dapat diakses.';
-          } else {
-            errorMessage = 'Periksa izin bot, validitas emoji, atau status pesan.';
-          }
-
-          const failEmbed = new EmbedBuilder()
-            .setTitle('❌ React Gagal')
-            .setDescription(errorMessage)
-            .setColor(0xFF0000)
-            .setTimestamp();
-
-          try {
             await button.update({
               content: null,
-              embeds: [failEmbed],
+              embeds: [successEmbed],
               components: []
             });
-          } catch (updateError) {
-            console.error('Error updating button response:', updateError);
+
+            collector.stop('done');
+
+          } else if (button.customId.startsWith('prev_page_') || button.customId.startsWith('next_page_')) {
+            const [_, direction, oldPageStr] = button.customId.split('_');
+            currentPage = direction === 'next' ? parseInt(oldPageStr) + 1 : parseInt(oldPageStr) - 1;
+
+            await button.update({
+              content: null,
+              embeds: [embed],
+              components: generateEmojiRows(currentPage)
+            });
           }
+
+        } catch (err) {
+          console.error('Gagal handle tombol:', err);
+          await button.reply({ content: 'Terjadi kesalahan saat memproses tombol.', ephemeral: true });
         }
       });
 
-      collector.on('end', async (collected, reason) => {
-        if (reason === 'time' && collected.size === 0) {
-          try {
-            const timeoutEmbed = new EmbedBuilder()
-              .setTitle('⌛ Waktu Habis')
-              .setDescription('Tidak ada emoji yang dipilih dalam 30 detik.')
-              .setColor(0xFF9900)
-              .setTimestamp();
+      collector.on('end', async (_, reason) => {
+        if (reason !== 'done') {
+          const timeoutEmbed = new EmbedBuilder()
+            .setTitle('Waktu Habis')
+            .setDescription('Tidak ada emoji yang dipilih dalam 60 detik.')
+            .setColor(0xFF9900)
+            .setTimestamp();
 
-            await interaction.editReply({
-              content: null,
-              embeds: [timeoutEmbed],
-              components: []
-            });
-          } catch (timeoutError) {
-            console.error('Error handling timeout:', timeoutError);
-          }
+          await interaction.editReply({
+            content: null,
+            embeds: [timeoutEmbed],
+            components: []
+          });
         }
       });
 
@@ -295,13 +243,13 @@ module.exports = {
 
       try {
         if (interaction.deferred && !interaction.replied) {
-          await interaction.editReply({ 
+          await interaction.editReply({
             content: fallback,
             embeds: [],
             components: []
           });
         } else if (!interaction.replied) {
-          await interaction.reply({ 
+          await interaction.reply({
             content: fallback,
             ephemeral: true
           });
