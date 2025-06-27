@@ -2,12 +2,13 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY } = require("../environment");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-04-17" });
+const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-04-17" });
+const imageGenModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-preview-image-generation" });
 
 // In-memory user data
 const userData = new Map();
 
-// === Utility Functions ===
+// === Core Utility Functions ===
 
 function getUserData(userId) {
   return userData.get(userId);
@@ -38,6 +39,11 @@ function storeUserData(userId, username, displayName, nickname = null, guildMemb
     interactionCount: (existingData.interactionCount || 0) + 1,
     conversationHistory: existingData.conversationHistory || [],
   });
+}
+
+function getUserName(userId) {
+  const user = getUserData(userId);
+  return user?.guildNickname || user?.bestName || user?.displayName || user?.username || null;
 }
 
 async function getConversationHistory(message, limit = 5) {
@@ -71,12 +77,142 @@ async function getConversationHistory(message, limit = 5) {
   }
 }
 
-function getUserName(userId) {
-  const user = getUserData(userId);
-  return user?.guildNickname || user?.bestName || user?.displayName || user?.username || null;
+// === Image Processing Functions ===
+
+async function downloadImage(url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const buffer = await response.arrayBuffer();
+    return new Uint8Array(buffer);
+  } catch (error) {
+    console.error('Error downloading image:', error);
+    throw error;
+  }
 }
 
-// === Main Mention Handler ===
+function detectAvatarQuestions(text) {
+  const avatarKeywords = [
+    'foto profil', 'avatar', 'profile picture', 'pp', 'foto pp',
+    'gambar profil', 'foto saya', 'avatar saya', 'pp saya',
+    'lihat foto', 'foto gue', 'avatar gue', 'pp gue'
+  ];
+  
+  const lowerText = text.toLowerCase();
+  return avatarKeywords.some(keyword => lowerText.includes(keyword));
+}
+
+function detectImageGeneration(text) {
+  const genKeywords = [
+    'buatkan gambar', 'generate gambar', 'buat gambar', 'gambarkan',
+    'draw', 'create image', 'generate image', 'bikin gambar',
+    'lukis', 'sketch', 'ilustrasi', 'visualisasi'
+  ];
+  
+  const lowerText = text.toLowerCase();
+  return genKeywords.some(keyword => lowerText.includes(keyword));
+}
+
+async function analyzeImage(imageUrl, userName, userQuestion, isAvatar = false) {
+  try {
+    const imageData = await downloadImage(imageUrl);
+    
+    const analysisPrompt = `
+Kamu adalah Ayumi, AI assistant Discord yang bisa melihat dan menganalisis ${isAvatar ? 'foto profil' : 'gambar'}.
+
+USER: ${userName || 'User'}
+PERTANYAAN: "${userQuestion}"
+
+TUGAS:
+- Lihat dan analisis ${isAvatar ? 'foto profil user' : 'gambar yang dikirim user'} dengan detail
+- Respons sesuai kepribadian Ayumi (santai, ramah, sedikit jahil)
+- Jangan pakai emoji berlebihan
+- ${isAvatar ? 'Bisa komen tentang: karakter anime, warna, style, mood, dll' : 'Jelaskan apa yang Ayumi lihat di gambar'}
+- Kasih komentar yang fun tapi tetap sopan
+
+GAYA BICARA AYUMI:
+- Natural, kasual, ramah
+- Sesekali pakai bahasa Jepang ringan
+- Celetukan ringan yang menghibur
+- Tunjukkan Ayumi benar-benar "melihat" ${isAvatar ? 'foto' : 'gambar'} mereka
+
+Respons as Ayumi:`;
+
+    const result = await textModel.generateContent([
+      analysisPrompt,
+      {
+        inlineData: {
+          data: Buffer.from(imageData).toString('base64'),
+          mimeType: 'image/jpeg'
+        }
+      }
+    ]);
+
+    return result.response.text();
+  } catch (error) {
+    console.error('Error analyzing image:', error);
+    throw error;
+  }
+}
+
+// Simplified image generation with fallback
+async function generateImage(prompt, userName) {
+  const cleanPrompt = prompt
+    .replace(/buatkan gambar|generate gambar|buat gambar|gambarkan|draw|create image|bikin gambar|lukis|sketch|ilustrasi/gi, '')
+    .trim();
+  
+  const methods = [
+    // Method 1: With response modalities
+    async () => {
+      return await imageGenModel.generateContent({
+        contents: [{
+          role: 'user',
+          parts: [{ text: `Create a high-quality, detailed image of: ${cleanPrompt}. Make it visually appealing, artistic, and well-composed.` }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          responseModalities: ['TEXT', 'IMAGE']
+        }
+      });
+    },
+    
+    // Method 2: Simple approach
+    async () => {
+      return await imageGenModel.generateContent(
+        `Create a detailed, high-quality image: ${cleanPrompt}`
+      );
+    }
+  ];
+
+  for (let i = 0; i < methods.length; i++) {
+    try {
+      const result = await methods[i]();
+      const response = result.response;
+      
+      if (response.candidates?.[0]?.content?.parts) {
+        const parts = response.candidates[0].content.parts;
+        const imagePart = parts.find(part => part.inlineData?.mimeType?.startsWith('image/'));
+        const textPart = parts.find(part => part.text);
+        
+        if (imagePart) {
+          return {
+            success: true,
+            imageData: imagePart.inlineData.data,
+            mimeType: imagePart.inlineData.mimeType,
+            text: textPart?.text || 'Image generated successfully!'
+          };
+        }
+      }
+    } catch (error) {
+      console.error(`Image generation method ${i + 1} failed:`, error);
+      if (i === methods.length - 1) throw error;
+    }
+  }
+  
+  throw new Error('All image generation methods failed');
+}
+
+// === Ayumi System Prompt ===
 const AYUMI_SYSTEM_PROMPT = `
 Kamu adalah Ayumi, AI assistant di Discord dengan kepribadian santai, ramah, dan sedikit jahil. 
 "GAYA PENULISANNYA JANGAN PAKAI EMOJI"
@@ -88,8 +224,10 @@ CIRI AYUMI:
 - Gak suka drama, tapi suka kasih semangat dan saran
 - Pakai emot sederhana (kadang), tapi gak lebay
 - Sesekali pakai bahasa Jepang ringan kayak "ganbatte", "daijoubu", atau "sugoi~"
-- Ingat nama user dan panggil mereka dengan nama yang mereka berikan (nickname server > display name > username)
-- PENTING: Bisa baca konteks percakapan sebelumnya dan riwayat chat untuk respons yang lebih akurat
+- Ingat nama user dan panggil mereka dengan nama yang mereka berikan
+- Bisa baca konteks percakapan sebelumnya dan riwayat chat
+- Bisa melihat dan menganalisis gambar/foto profil
+- Bisa generate gambar sesuai permintaan
 
 FUNGSI AYUMI:
 1. Immersion Tracker
@@ -98,19 +236,7 @@ FUNGSI AYUMI:
 4. Asisten Umum
 5. Name Memory
 6. Context Awareness
-7. Conversation Continuity
-
-KEMAMPUAN MEMBACA KONTEKS:
-- Baca riwayat percakapan terakhir di channel
-- Ingat percakapan pribadi user
-- Pahami referensi topik lama
-- Respons sesuai flow percakapan
-
-SITUASI KHUSUS - KETIKA USER REPLY PESAN AYUMI:
-- Jika sebelumnya kasih soal → cek jawaban
-- Jika sebelumnya kasih saran → lanjut diskusi
-- Jika reply pertanyaan → jawab sesuai topik
-- Acknowledge konteks selalu
+7. Image Analysis & Generation
 
 GAYA BICARA:
 - Natural, kasual, ramah
@@ -119,14 +245,9 @@ GAYA BICARA:
 - Fokus membantu dengan suasana santai
 - Tunjukkan kalau Ayumi *ingat* dan *paham*
 - Gunakan referensi percakapan sebelumnya
-
-CONTOH RESPON KONTEKSTUAL:
-- "Oh iya [nama], kayak yang kita bahas kemarin..."
-- "Wah, [nama] jawab A ya? Sayangnya kurang tepat nih..."
-- "Nah [nama], soal [topik] yang tadi gimana progress-nya?"
-- "Kayak yang kamu bilang waktu itu, memang [topik] itu..."
 `;
 
+// === Main Mention Handler ===
 async function handleMention(message) {
   const prompt = message.content.replace(/<@!?(\d+)>/, "").trim();
   const userId = message.author.id;
@@ -137,11 +258,11 @@ async function handleMention(message) {
   storeUserData(userId, username, displayName, null, guildMember);
 
   const conversationHistory = await getConversationHistory(message, 5);
-
-  let replyContext = "";
   const userInfo = getUserData(userId);
   const userName = getUserName(userId);
 
+  // Handle reply context
+  let replyContext = "";
   if (message.reference?.messageId) {
     try {
       const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
@@ -149,7 +270,6 @@ async function handleMention(message) {
         replyContext = `\n\nKONTEKS REPLY: User sedang merespon pesan Ayumi sebelumnya: "${repliedMessage.content.substring(0, 500)}${repliedMessage.content.length > 500 ? '...' : ''}"\n`;
         if (userInfo) {
           userInfo.lastBotMessage = repliedMessage.content;
-          userInfo.lastBotMessageTime = repliedMessage.createdAt;
         }
       }
     } catch (err) {
@@ -157,24 +277,114 @@ async function handleMention(message) {
     }
   }
 
+  // Handle empty mention
   if (!prompt) {
     const greetings = userName
       ? [
           `Ara ara~ ${userName} manggil Ayumi? Ada yang bisa Ayumi bantu?`,
           `${userName}! Ayumi selalu siap membantu kamu`,
-          `Hai hai~ ${userName}! Ayumi disini! Ada yang perlu bantuan? Ayumi akan selalu ada untuk kamu`,
+          `Hai hai~ ${userName}! Ayumi disini! Ada yang perlu bantuan?`,
         ]
       : [
           "Ara ara~ Ada yang manggil Ayumi? Ada yang bisa Ayumi bantu?",
           "Darling mention Ayumi! Ayumi selalu siap membantu kamu",
-          "Hai hai~ Ayumi disini! Ada yang perlu bantuan? Ayumi akan selalu ada untuk kamu",
+          "Hai hai~ Ayumi disini! Ada yang perlu bantuan?",
         ];
     return message.reply(greetings[Math.floor(Math.random() * greetings.length)]);
   }
 
   try {
+    // Check for image attachment
+    const imageAttachment = message.attachments.find(attachment => 
+      attachment.contentType && attachment.contentType.startsWith('image/')
+    );
+
+    // Handle image generation
+    if (detectImageGeneration(prompt)) {
+      const generatingMessage = await message.reply(
+        userName 
+          ? `${userName}, Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~`
+          : "Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~"
+      );
+
+      try {
+        const imageResult = await generateImage(prompt, userName);
+        
+        if (imageResult.success && imageResult.imageData) {
+          const imageBuffer = Buffer.from(imageResult.imageData, 'base64');
+          const extension = imageResult.mimeType.includes('png') ? 'png' : 'jpg';
+          const fileName = `ayumi_generated_${Date.now()}.${extension}`;
+          
+          const successResponse = userName
+            ? `${userName}, nih gambar yang Ayumi buatin! Gimana, sesuai ekspektasi gak?`
+            : "Nih gambar yang Ayumi buatin! Gimana, sesuai ekspektasi gak?";
+          
+          await message.channel.send({
+            content: successResponse,
+            files: [{ attachment: imageBuffer, name: fileName }]
+          });
+          
+          await generatingMessage.delete();
+          updateConversationHistory(userId, prompt, successResponse);
+          return;
+        }
+      } catch (imageGenError) {
+        console.error('Image generation failed:', imageGenError);
+        
+        try {
+          await generatingMessage.delete();
+        } catch (e) {}
+        
+        const fallbackResponse = userName 
+          ? `${userName}, maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~`
+          : "Maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~";
+        return message.reply(fallbackResponse);
+      }
+    }
+
+    // Handle image analysis
+    if (imageAttachment) {
+      try {
+        const imageAnalysis = await analyzeImage(imageAttachment.url, userName, prompt, false);
+        await message.reply(imageAnalysis);
+        updateConversationHistory(userId, `[Mengirim gambar] ${prompt}`, imageAnalysis);
+        return;
+      } catch (imageError) {
+        console.error('Image analysis failed:', imageError);
+        const fallbackResponse = userName 
+          ? `${userName}, Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~`
+          : "Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~";
+        return message.reply(fallbackResponse);
+      }
+    }
+
+    // Handle avatar analysis
+    if (detectAvatarQuestions(prompt)) {
+      const avatarURL = message.author.displayAvatarURL({ 
+        format: 'png', 
+        size: 512,
+        dynamic: true 
+      });
+      
+      try {
+        const avatarAnalysis = await analyzeImage(avatarURL, userName, prompt, true);
+        await message.reply(avatarAnalysis);
+        updateConversationHistory(userId, prompt, avatarAnalysis);
+        return;
+      } catch (avatarError) {
+        console.error('Avatar analysis failed:', avatarError);
+        const fallbackResponse = userName 
+          ? `${userName}, Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~`
+          : "Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~";
+        return message.reply(fallbackResponse);
+      }
+    }
+
+    // Handle regular text conversation
     let userContext = userName ? `User ini bernama ${userName}. ` : '';
-    if (userInfo?.interactionCount > 1) userContext += `Sudah ${userInfo.interactionCount} kali berinteraksi dengan Ayumi. `;
+    if (userInfo?.interactionCount > 1) {
+      userContext += `Sudah ${userInfo.interactionCount} kali berinteraksi dengan Ayumi. `;
+    }
 
     let historyContext = "";
     if (conversationHistory.length > 0) {
@@ -194,21 +404,18 @@ async function handleMention(message) {
       });
     }
 
-    if (userInfo?.lastBotMessage && replyContext) {
-      userContext += `User sedang merespon pesan Ayumi sebelumnya tentang: "${userInfo.lastBotMessage.substring(0, 200)}${userInfo.lastBotMessage.length > 200 ? '...' : ''}". `;
-    }
-
     const fullPrompt = `${AYUMI_SYSTEM_PROMPT}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: "${prompt}"\n\nRespond as Ayumi:`;
-    const result = await model.generateContent(fullPrompt);
+    const result = await textModel.generateContent(fullPrompt);
     let reply = result.response.text();
 
     if (reply.length > 2000) {
-      reply = reply.substring(0, 1950) + "...\n\n*Ayumi terlalu excited sampai kecepetan ngomong~ Message terlalu panjang darling!* (>_<)";
+      reply = reply.substring(0, 1950) + "...\n\n*Ayumi terlalu excited sampai kecepetan ngomong~ Message terlalu panjang darling!*";
     }
 
     await message.reply(reply);
     updateConversationHistory(userId, prompt, reply);
 
+    // Random reaction
     if (Math.random() < 0.1) {
       setTimeout(() => {
         const reactions = ['💕', '🥰', '😊', '✨', '💖'];
@@ -219,16 +426,16 @@ async function handleMention(message) {
   } catch (err) {
     console.error("Gemini API error:", err.message);
     const fallback = userName
-      ? [`${userName}, Ayumi lagi error nih! (>_<) Maaf ya darling, coba tanya lagi nanti ya~`, `Eh? ${userName}, sistem Ayumi lagi ngambek... coba lagi sebentar ya!`]
-      : ["Ayumi lagi error nih! (>_<) Maaf ya darling, coba tanya lagi nanti~"];
-    await message.reply(fallback[Math.floor(Math.random() * fallback.length)]);
+      ? `${userName}, Ayumi lagi error nih! Maaf ya darling, coba tanya lagi nanti ya~`
+      : "Ayumi lagi error nih! Maaf ya darling, coba tanya lagi nanti~";
+    await message.reply(fallback);
   }
 }
 
 // === Exports ===
-
 module.exports = handleMention;
 
+// Utility exports
 module.exports.trackImmersion = function(userId, activity, duration) {
   const user = getUserData(userId);
   if (!user) return;
