@@ -76,7 +76,7 @@ var Quizzes = map[string]QuizInfo{
 		},
 	},
 	"Level_7": {
-		Label:       "Kotodama (言霊)",
+		Label:       "Koten Kami (古典神)",
 		Description: "JPDB 30K",
 		Value:       "Level_7",
 		RoleID:      "1392066430467440742", // Replace with actual role ID
