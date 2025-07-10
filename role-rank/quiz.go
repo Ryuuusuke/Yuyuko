@@ -49,10 +49,10 @@ var Quizzes = map[string]QuizInfo{
 		Label:       "Senpai (先輩)",
 		Description: "JPDB 5000 + gn2",
 		Value:       "Level_4",
-		RoleID:      "Y1392066020235153408",
+		RoleID:      "1392066020235153408",
 		Commands: []string{
-			"k!quiz jpdbtop30k(1-2) 20 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
-			"k!quiz jpdbtop30k(1-3) 20 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
+			"k!quiz gn2 nd 20 mmq=4 atl=60",
+			"k!quiz jpdbtop30k(1-5000) 35 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
 		},
 	},
 	"Level_5": {

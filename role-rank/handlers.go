@@ -69,6 +69,11 @@ func OnInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				Type:  discordgo.PermissionOverwriteTypeMember,
 				Allow: discordgo.PermissionViewChannel | discordgo.PermissionSendMessages | discordgo.PermissionReadMessageHistory,
 			},
+			{
+				ID:    s.State.User.ID, // ID bot
+				Type:  discordgo.PermissionOverwriteTypeMember,
+				Allow: discordgo.PermissionViewChannel | discordgo.PermissionSendMessages | discordgo.PermissionReadMessageHistory,
+			},
 		},
 	})
 	if err != nil {
@@ -87,9 +92,9 @@ func OnInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	// Kirim pesan pembuka
-	welcomeMsg := fmt.Sprintf(`**Selamat datang di Quiz %s!**
+commandsText := strings.Join(quiz.Commands, "\n")
 
-Halo <@%s>! Untuk memulai quiz, copy dan paste command berikut:
+welcomeMsg := fmt.Sprintf(`Halo <@%s>! Untuk memulai quiz, copy dan paste command berikut:
 
 **Command:**
 `+"```"+
@@ -100,9 +105,11 @@ Halo <@%s>! Untuk memulai quiz, copy dan paste command berikut:
 2. Paste di channel ini
 3. Jawab pertanyaan dari Kotoba Bot
 4. Kamu akan mendapat role **%s** setelah menyelesaikan quiz!
+5. Kamu bisa hapus channel ini secara manual dengan a!del
 
-⚠️ Jangan lupa paste command langsung di channel ini ya!`,
-		quiz.Label, user.ID, quiz.Commands, quiz.Label)
+Jangan lupa paste command langsung di channel ini ya!`,
+	user.ID, commandsText, quiz.Label)
+
 
 	_, err = s.ChannelMessageSend(channel.ID, welcomeMsg)
 	if err != nil {
@@ -123,22 +130,43 @@ Halo <@%s>! Untuk memulai quiz, copy dan paste command berikut:
 }
 
 func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Ignore bot messages except from Kotoba Bot
+	// Abaikan pesan bot (selain kotoba)
 	if m.Author.Bot && m.Author.ID != kotobaBotID {
 		return
 	}
 
-	// Handle user commands (detect when user runs the quiz command)
+	// Command manual delete
+	if strings.HasPrefix(m.Content, "a!del") {
+		// Opsional: batasi hanya user pemilik quiz
+		session, exists := activeQuizzes[m.Author.ID]
+		if exists && m.ChannelID == session.ThreadID {
+			go func() {
+				s.ChannelMessageSend(m.ChannelID, "Channel akan dihapus...")
+				time.Sleep(2 * time.Second)
+				_, err := s.ChannelDelete(m.ChannelID)
+				if err != nil {
+					log.Printf("Gagal menghapus channel via a!del: %v", err)
+				}
+			}()
+			return
+		}
+
+		s.ChannelMessageSend(m.ChannelID, "Kamu tidak memiliki quiz aktif di sini.")
+		return
+	}
+
+	// Command quiz user biasa
 	if !m.Author.Bot {
 		HandleUserCommand(s, m)
 		return
 	}
 
-	// Handle Kotoba Bot messages
+	// Pesan dari Kotoba Bot
 	if m.Author.ID == kotobaBotID {
 		HandleKotobaBotMessage(s, m)
 	}
 }
+
 
 func HandleUserCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Check if message starts with k!quiz
