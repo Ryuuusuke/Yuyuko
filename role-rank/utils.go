@@ -1,9 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -18,15 +17,27 @@ func SendQuizSelector(s *discordgo.Session, channelID string) {
 		})
 	}
 
+	embed := &discordgo.MessageEmbed{
+		Title:       "Japanese Quiz Selector",
+		Description: `Pilih level quiz yang ingin kamu ambil dari dropdown menu di bawah ini. Setiap quiz akan memberikan role sesuai level.`,
+		Color:       0xf173ff,
+		Footer: &discordgo.MessageEmbedFooter{
+			Text: "Powered by Kotoba Bot",
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+
 	msg := &discordgo.MessageSend{
-		Content: "Pilih quiz level mu:",
+		Embeds: []*discordgo.MessageEmbed{embed},
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
 					discordgo.SelectMenu{
 						CustomID:    "quiz_select",
-						Placeholder: "Pilih level...",
+						Placeholder: "Pilih level quiz...",
 						Options:     menuOptions,
+						MinValues:   &[]int{1}[0],
+						MaxValues:   1,
 					},
 				},
 			},
@@ -35,70 +46,6 @@ func SendQuizSelector(s *discordgo.Session, channelID string) {
 
 	_, err := s.ChannelMessageSendComplex(channelID, msg)
 	if err != nil {
-		log.Printf("Failed to send selector: %v", err)
-	}
-}
-
-func OnReady(s *discordgo.Session, r *discordgo.Ready) {
-	fmt.Printf("Logged in as %s\n", s.State.User.Username)
-	channelID := "1372825233295147073"
-	SendQuizSelector(s, channelID)
-}
-
-func OnInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionMessageComponent {
-		return
-	}
-
-	if i.MessageComponentData().CustomID == "quiz_select" {
-		user := i.Member.User
-		quizID := i.MessageComponentData().Values[0]
-		quiz, ok := Quizzes[quizID]
-		if !ok {
-			return
-		}
-
-		threadName := fmt.Sprintf("%s - Quiz", user.Username)
-		thread, err := s.MessageThreadStartComplex(i.ChannelID, i.Message.ID, &discordgo.ThreadStart{
-			Name: threadName,
-			Type: discordgo.ChannelTypeGuildPrivateThread,
-		})
-		if err != nil {
-			log.Printf("Failed to chreate thread: %v", err)
-			return
-		}
-
-		err = s.ThreadMemberAdd(thread.ID, user.ID)
-		if err != nil {
-			log.Printf("Failed to add user to thread: %v", err)
-		}
-
-		s.ChannelMessageSend(thread.ID, fmt.Sprintf("Halo <@%s>! untuk memulai quiz, jalankan command ini: \n```%s```", user.ID, quiz.Command))
-
-	}
-}
-
-func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID != kotobaBotID || len(m.Embeds) == 0 {
-		return
-	}
-
-	for _, embed := range m.Embeds {
-		if strings.Contains(embed.Description, "Congratulations!") {
-			for userID, quizID := range activeQuizzes {
-				quiz := Quizzes[quizID]
-
-				err := s.GuildMemberRoleAdd(m.GuildID, userID, quiz.RoleID)
-				if err != nil {
-					log.Printf("Failed to give role: %v", err)
-					return
-				}
-
-				s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🎉 Selamat <@%s>, kamu telah menyelesaikan quiz dan naik mendapatkan role **%s**!", userID, quiz.Label))
-
-				delete(activeQuizzes, userID)
-				break
-			}
-		}
+		log.Printf("Failed to send quiz selector: %v", err)
 	}
 }
