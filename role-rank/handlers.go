@@ -118,15 +118,26 @@ Jangan lupa paste command langsung di channel ini ya!`,
 
 	// Respon ke user (ephemeral)
 	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("Channel private **%s** telah dibuat untuk quiz **%s**. Silakan lanjut di sana!", channel.Name, quiz.Label),
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	// Kirim pesan followup (bisa dihapus)
+	msg, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Content: fmt.Sprintf("Channel private **%s** telah dibuat untuk quiz **%s**. Silakan lanjut di sana!", channel.Name, quiz.Label),
 	})
 	if err != nil {
-		log.Printf("Gagal merespon interaction: %v", err)
+		log.Printf("Gagal kirim followup: %v", err)
+		return
 	}
+
+	// Hapus pesan setelah delay
+	go func() {
+		time.Sleep(10 * time.Second)
+		err := s.FollowupMessageDelete(i.Interaction, msg.ID)
+		if err != nil {
+			log.Printf("Gagal hapus pesan followup: %v", err)
+		}
+	}()
 }
 
 func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -135,23 +146,35 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	// Command manual delete
 	if strings.HasPrefix(m.Content, "a!del") {
-		// Opsional: batasi hanya user pemilik quiz
-		session, exists := activeQuizzes[m.Author.ID]
-		if exists && m.ChannelID == session.ThreadID {
-			go func() {
-				s.ChannelMessageSend(m.ChannelID, "Channel akan dihapus...")
-				time.Sleep(2 * time.Second)
-				_, err := s.ChannelDelete(m.ChannelID)
-				if err != nil {
-					log.Printf("Gagal menghapus channel via a!del: %v", err)
-				}
-			}()
+		channel, err := s.State.Channel(m.ChannelID)
+		if err != nil {
+			channel, err = s.Channel(m.ChannelID)
+			if err != nil {
+				log.Printf("Gagal mengambil channel: %v", err)
+				return
+			}
+		}
+
+		// Pastikan channel ini berada di kategori quiz
+		if channel.ParentID == quizCategoryID {
+			// Cegah penghapusan channel utama
+			if channel.ID == "1392463011301691442" {
+				s.ChannelMessageSend(m.ChannelID, "Channel ini adalah pusat selector quiz. Tidak bisa dihapus.")
+				return
+			}
+
+			// Kirim konfirmasi dan hapus
+			s.ChannelMessageSend(m.ChannelID, "Channel ini akan dihapus...")
+			time.Sleep(1 * time.Second)
+			_, err := s.ChannelDelete(m.ChannelID)
+			if err != nil {
+				log.Printf("Gagal hapus channel a!del: %v", err)
+			}
 			return
 		}
 
-		s.ChannelMessageSend(m.ChannelID, "Kamu tidak memiliki quiz aktif di sini.")
+		s.ChannelMessageSend(m.ChannelID, "Channel ini bukan bagian dari kategori quiz.")
 		return
 	}
 
@@ -223,6 +246,18 @@ func HandleKotobaBotMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
+func GetCurrentQuizRoleLevel(member *discordgo.Member) (int, string) {
+	for _, roleID := range member.Roles {
+		for _, quiz := range Quizzes {
+			if roleID == quiz.RoleID {
+				return quiz.Level, roleID
+			}
+		}
+	}
+	return -1, ""
+}
+
+
 func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var completedUserID string
 	var session QuizSession
@@ -234,7 +269,6 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 			break
 		}
 	}
-
 	if completedUserID == "" {
 		return
 	}
@@ -244,50 +278,87 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 		return
 	}
 
-	session.Progress++
-	session.Started = false
-
-	if session.Progress < len(quiz.Commands) {
-		// Masih ada quiz berikutnya
+	// Masih ada tahap berikutnya?
+	if session.Progress+1 < len(quiz.Commands) {
+		session.Progress++
+		session.Started = false
 		activeQuizzes[completedUserID] = session
-		nextCommand := quiz.Commands[session.Progress]
 
-		msg := "Sesi pertama selesai! Sekarang lanjut ke quiz berikutnya:\n```" + nextCommand + "```"
-		s.ChannelMessageSend(session.ThreadID, msg)
+		nextCmd := quiz.Commands[session.Progress]
+		s.ChannelMessageSend(session.ThreadID,
+			"Sesi sebelumnya selesai! Sekarang lanjut ke quiz berikutnya:\n```"+nextCmd+"```")
 		return
 	}
 
-	// Semua quiz selesai, beri role
-	err := s.GuildMemberRoleAdd(m.GuildID, completedUserID, quiz.RoleID)
+	// Semua tahap selesai
+	member, err := s.GuildMember(m.GuildID, completedUserID)
 	if err != nil {
-		log.Printf("Gagal memberikan role: %v", err)
-		s.ChannelMessageSend(session.ThreadID, "Gagal memberikan role. Mohon hubungi admin.")
+		log.Printf("Gagal mendapatkan member: %v", err)
 		return
 	}
 
-	// Kirim pesan sukses
-	successMsg := "Semua sesi quiz berhasil diselesaikan! Role **" + quiz.Label + "** berhasil diberikan.\nChannel ini akan ditutup dalam 30 detik."
-	s.ChannelMessageSend(session.ThreadID, successMsg)
+	currentLevel, currentRoleID := GetCurrentQuizRoleLevel(member)
 
-	// Hapus dari active
-	delete(activeQuizzes, completedUserID)
+	// === CASE 1: Sudah punya role yang sama ===
+	if currentLevel == quiz.Level {
+		s.ChannelMessageSend(m.ChannelID,
+			fmt.Sprintf("Kamu sudah memiliki role **%s**. Tidak ada perubahan.\nChannel ini akan dihapus dalam 30 detik.", quiz.Label))
+		cleanupQuizChannel(s, completedUserID)
+		return
+	}
 
-	// Hapus channel
-	go func() {
-		time.Sleep(30 * time.Second)
-		_, err := s.ChannelDelete(session.ThreadID)
+	// === CASE 2: Downgrade ===
+	if currentLevel > quiz.Level {
+		s.ChannelMessageSend(m.ChannelID,
+			"Kamu sudah memiliki role dengan level lebih tinggi. Downgrade tidak diizinkan.\nChannel ini akan dihapus dalam 30 detik.")
+		cleanupQuizChannel(s, completedUserID)
+		return
+	}
+
+	// === CASE 3: Upgrade role ===
+	if currentLevel >= 0 && currentRoleID != "" {
+		err := s.GuildMemberRoleRemove(m.GuildID, completedUserID, currentRoleID)
 		if err != nil {
-			log.Printf("Gagal hapus channel: %v", err)
+			log.Printf("Gagal menghapus role lama: %v", err)
 		}
-	}()
+	}
+
+	err = s.GuildMemberRoleAdd(m.GuildID, completedUserID, quiz.RoleID)
+	if err != nil {
+		log.Printf("Gagal memberikan role baru: %v", err)
+		s.ChannelMessageSend(m.ChannelID, "Gagal memberikan role baru. Mohon hubungi admin.")
+		return
+	}
+
+	s.ChannelMessageSend(m.ChannelID,
+		fmt.Sprintf("**SELAMAT** <@%s>! Kamu sekarang menjadi **%s**.\nChannel ini akan dihapus dalam 30 detik.", completedUserID, quiz.Label))
+
+	cleanupQuizChannel(s, completedUserID)
 }
+
+
+// helper untuk bersihkan session, delete channel setelah delay
+func cleanupQuizChannel(s *discordgo.Session, userID string) {
+	// hapus session
+	session := activeQuizzes[userID]
+	delete(activeQuizzes, userID)
+
+	// delete channel (threadID) setelah 30 detik
+	go func(chID string) {
+		time.Sleep(30 * time.Second)
+		if _, err := s.ChannelDelete(chID); err != nil {
+			log.Printf("Gagal menghapus channel: %v", err)
+		}
+	}(session.ThreadID)
+}
+
 
 
 func RespondWithError(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: "❌ " + message,
+			Content: "" + message,
 			Flags:   discordgo.MessageFlagsEphemeral,
 		},
 	})

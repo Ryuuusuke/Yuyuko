@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -8,10 +9,36 @@ import (
 )
 
 func SendQuizSelector(s *discordgo.Session, channelID string) {
+	// Hapus semua pesan sebelumnya dari bot sendiri
+	messages, err := s.ChannelMessages(channelID, 100, "", "", "")
+	if err == nil {
+		for _, msg := range messages {
+			if msg.Author != nil && msg.Author.ID == s.State.User.ID {
+				_ = s.ChannelMessageDelete(channelID, msg.ID)
+				time.Sleep(200 * time.Millisecond) // Hindari rate limit
+			}
+		}
+	}
+
 	var menuOptions []discordgo.SelectMenuOption
-	for _, quiz := range Quizzes {
+	var quizOrder = []string{
+		"hiragana_katakana",
+		"Level_1",
+		"Level_2",
+		"Level_3",
+		"Level_4",
+		"Level_5",
+		"Level_6",
+		"Level_7",
+	}
+
+	for i, key := range quizOrder {
+		quiz, ok := Quizzes[key]
+		if !ok {
+			continue
+		}
 		menuOptions = append(menuOptions, discordgo.SelectMenuOption{
-			Label:       quiz.Label,
+			Label:       fmt.Sprintf("%d. %s", i+1, quiz.Label),
 			Description: quiz.Description,
 			Value:       quiz.Value,
 		})
@@ -44,7 +71,7 @@ func SendQuizSelector(s *discordgo.Session, channelID string) {
 		},
 	}
 
-	_, err := s.ChannelMessageSendComplex(channelID, msg)
+	_, err = s.ChannelMessageSendComplex(channelID, msg)
 	if err != nil {
 		log.Printf("Failed to send quiz selector: %v", err)
 	}
