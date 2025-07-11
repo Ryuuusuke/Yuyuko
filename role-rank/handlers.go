@@ -41,9 +41,17 @@ func OnInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	if _, exists := activeQuizzes[user.ID]; exists {
-		RespondWithError(s, i, "Kamu sudah memiliki quiz aktif. Selesaikan dulu yang sebelumnya ya!")
-		return
+	// 💥 CEK apakah session nyangkut tapi channel-nya sudah tidak ada
+	if session, exists := activeQuizzes[user.ID]; exists {
+		_, err := s.Channel(session.ThreadID)
+		if err != nil {
+			// channel sudah dihapus → bersihkan sesi
+			log.Printf("Channel quiz milik user %s sudah tidak ada. Membersihkan sesi.", user.ID)
+			delete(activeQuizzes, user.ID)
+		} else {
+			RespondWithError(s, i, "Kamu sudah memiliki quiz aktif. Selesaikan dulu yang sebelumnya ya!")
+			return
+		}
 	}
 
 	channelName := fmt.Sprintf("quiz-%s-%s", strings.ToLower(user.Username), strings.ToLower(strings.ReplaceAll(quiz.Label, " ", "-")))
@@ -55,24 +63,29 @@ func OnInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		ParentID: quizCategoryID,
 		PermissionOverwrites: []*discordgo.PermissionOverwrite{
 			{
-				ID:    guildID, // semua user
-				Type:  discordgo.PermissionOverwriteTypeRole,
-				Deny:  discordgo.PermissionViewChannel,
+				ID:   guildID, // semua user
+				Type: discordgo.PermissionOverwriteTypeRole,
+				Deny: discordgo.PermissionViewChannel,
 			},
 			{
-				ID:    user.ID, // user ini
-				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionViewChannel | discordgo.PermissionSendMessages,
+				ID:   user.ID, // user ini
+				Type: discordgo.PermissionOverwriteTypeMember,
+				Allow: discordgo.PermissionViewChannel |
+					discordgo.PermissionSendMessages,
 			},
 			{
-				ID:    kotobaBotID,
-				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionViewChannel | discordgo.PermissionSendMessages | discordgo.PermissionReadMessageHistory,
+				ID:   kotobaBotID,
+				Type: discordgo.PermissionOverwriteTypeMember,
+				Allow: discordgo.PermissionViewChannel |
+					discordgo.PermissionSendMessages |
+					discordgo.PermissionReadMessageHistory,
 			},
 			{
-				ID:    s.State.User.ID, // ID bot
-				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionViewChannel | discordgo.PermissionSendMessages | discordgo.PermissionReadMessageHistory,
+				ID:   s.State.User.ID,
+				Type: discordgo.PermissionOverwriteTypeMember,
+				Allow: discordgo.PermissionViewChannel |
+					discordgo.PermissionSendMessages |
+					discordgo.PermissionReadMessageHistory,
 			},
 		},
 	})
@@ -92,9 +105,8 @@ func OnInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 
 	// Kirim pesan pembuka
-commandsText := strings.Join(quiz.Commands, "\n")
-
-welcomeMsg := fmt.Sprintf(`Halo <@%s>! Untuk memulai quiz, copy dan paste command berikut:
+	commandsText := quiz.Commands[0]
+	welcomeMsg := fmt.Sprintf(`Halo <@%s>! Untuk memulai quiz, copy dan paste command berikut:
 
 **Command:**
 `+"```"+
@@ -108,20 +120,18 @@ welcomeMsg := fmt.Sprintf(`Halo <@%s>! Untuk memulai quiz, copy dan paste comman
 5. Kamu bisa hapus channel ini secara manual dengan a!del
 
 Jangan lupa paste command langsung di channel ini ya!`,
-	user.ID, commandsText, quiz.Label)
-
+		user.ID, commandsText, quiz.Label)
 
 	_, err = s.ChannelMessageSend(channel.ID, welcomeMsg)
 	if err != nil {
 		log.Printf("Gagal kirim pesan pembuka: %v", err)
 	}
 
-	// Respon ke user (ephemeral)
+	// Respon interaction dengan followup ephemeral (bisa dihapus)
 	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	})
 
-	// Kirim pesan followup (bisa dihapus)
 	msg, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 		Content: fmt.Sprintf("Channel private **%s** telah dibuat untuk quiz **%s**. Silakan lanjut di sana!", channel.Name, quiz.Label),
 	})
@@ -130,7 +140,7 @@ Jangan lupa paste command langsung di channel ini ya!`,
 		return
 	}
 
-	// Hapus pesan setelah delay
+	// Hapus pesan setelah 10 detik
 	go func() {
 		time.Sleep(10 * time.Second)
 		err := s.FollowupMessageDelete(i.Interaction, msg.ID)
@@ -139,6 +149,7 @@ Jangan lupa paste command langsung di channel ini ya!`,
 		}
 	}()
 }
+
 
 func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Abaikan pesan bot (selain kotoba)
@@ -278,10 +289,12 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 		return
 	}
 
-	// Masih ada tahap berikutnya?
+	// Tandai sesi saat ini selesai
+	session.Started = false
+
+	// === Masih ada command tahap selanjutnya?
 	if session.Progress+1 < len(quiz.Commands) {
 		session.Progress++
-		session.Started = false
 		activeQuizzes[completedUserID] = session
 
 		nextCmd := quiz.Commands[session.Progress]
@@ -290,7 +303,9 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 		return
 	}
 
-	// Semua tahap selesai
+	// === Semua tahap selesai ===
+
+	// Dapatkan member info
 	member, err := s.GuildMember(m.GuildID, completedUserID)
 	if err != nil {
 		log.Printf("Gagal mendapatkan member: %v", err)
@@ -299,7 +314,7 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 
 	currentLevel, currentRoleID := GetCurrentQuizRoleLevel(member)
 
-	// === CASE 1: Sudah punya role yang sama ===
+	// CASE 1: Sudah punya role yang sama
 	if currentLevel == quiz.Level {
 		s.ChannelMessageSend(m.ChannelID,
 			fmt.Sprintf("Kamu sudah memiliki role **%s**. Tidak ada perubahan.\nChannel ini akan dihapus dalam 30 detik.", quiz.Label))
@@ -307,7 +322,7 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 		return
 	}
 
-	// === CASE 2: Downgrade ===
+	// CASE 2: Downgrade tidak diizinkan
 	if currentLevel > quiz.Level {
 		s.ChannelMessageSend(m.ChannelID,
 			"Kamu sudah memiliki role dengan level lebih tinggi. Downgrade tidak diizinkan.\nChannel ini akan dihapus dalam 30 detik.")
@@ -315,7 +330,7 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 		return
 	}
 
-	// === CASE 3: Upgrade role ===
+	// CASE 3: Upgrade role
 	if currentLevel >= 0 && currentRoleID != "" {
 		err := s.GuildMemberRoleRemove(m.GuildID, completedUserID, currentRoleID)
 		if err != nil {
@@ -330,20 +345,22 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 		return
 	}
 
+	// Sukses
 	s.ChannelMessageSend(m.ChannelID,
 		fmt.Sprintf("**SELAMAT** <@%s>! Kamu sekarang menjadi **%s**.\nChannel ini akan dihapus dalam 30 detik.", completedUserID, quiz.Label))
 
+	// Bersihkan channel dan sesi
 	cleanupQuizChannel(s, completedUserID)
 }
 
-
 // helper untuk bersihkan session, delete channel setelah delay
 func cleanupQuizChannel(s *discordgo.Session, userID string) {
-	// hapus session
-	session := activeQuizzes[userID]
+	session, exists := activeQuizzes[userID]
+	if !exists {
+		return
+	}
 	delete(activeQuizzes, userID)
 
-	// delete channel (threadID) setelah 30 detik
 	go func(chID string) {
 		time.Sleep(30 * time.Second)
 		if _, err := s.ChannelDelete(chID); err != nil {
@@ -351,8 +368,6 @@ func cleanupQuizChannel(s *discordgo.Session, userID string) {
 		}
 	}(session.ThreadID)
 }
-
-
 
 func RespondWithError(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
