@@ -84,7 +84,7 @@ var Quizzes = map[string]QuizInfo{
 		},
 	},
 	"Level_7": {
-		Label:       "Koten Kam(古典神)",
+		Label:       "Koten Kami (古典神)",
 		Level:       7,
 		Description: "JPDB 30K",
 		Value:       "Level_7",
