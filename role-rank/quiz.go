@@ -6,11 +6,13 @@ type QuizInfo struct {
 	Value       string
 	RoleID      string
 	Commands    []string
+	Level       int
 }
 
 var Quizzes = map[string]QuizInfo{
 	"hiragana_katakana": {
 		Label:       "Kanji Wakaran (漢字わからん)",
+		Level:       0,
 		Description: "Hiragana + Katakana Quiz",
 		Value:       "hiragana_katakana",
 		RoleID:      "1392065087216291891", // Replace with actual role ID
@@ -20,6 +22,7 @@ var Quizzes = map[string]QuizInfo{
 	},
 	"Level_1": {
 		Label:       "Shoshinsha (初心者)",
+		Level:       1,
 		Description: "JPDB Beginner Level (1-300)",
 		Value:       "Level_1",
 		RoleID:      "1392065395984306246", // Replace with actual role ID
@@ -29,6 +32,7 @@ var Quizzes = map[string]QuizInfo{
 	},
 	"Level_2": {
 		Label:       "Gakushūsha (学習者)",
+		Level:       2,
 		Description: "JPDB Intermediate Level (1-1000)",
 		Value:       "Level_2",
 		RoleID:      "1392065532051591240", // Replace with actual role ID
@@ -38,6 +42,7 @@ var Quizzes = map[string]QuizInfo{
 	},
 	"Level_3": {
 		Label:       "Jōkyūsha (上級者)",
+		Level:       3,
 		Description: "JPDB Advance Level (1-3000)",
 		Value:       "Level_3",
 		RoleID:      "1392065673185857627", // Replace with actual role ID
@@ -47,6 +52,7 @@ var Quizzes = map[string]QuizInfo{
 	},
 	"Level_4": {
 		Label:       "Senpai (先輩)",
+		Level:       4,
 		Description: "JPDB 5000 + gn2",
 		Value:       "Level_4",
 		RoleID:      "1392066020235153408",
@@ -57,6 +63,7 @@ var Quizzes = map[string]QuizInfo{
 	},
 	"Level_5": {
 		Label:       "Tetsujin (鉄人)",
+		Level:       5,
 		Description: "JPDB 10K + gn1",
 		Value:       "Level_5",
 		RoleID:      "1392066105677189121", // Replace with actual role ID
@@ -67,6 +74,7 @@ var Quizzes = map[string]QuizInfo{
 	},
 	"Level_6": {
 		Label:       "Kotodama (言霊)",
+		Level:       6,
 		Description: "JPDB 20K + gn1",
 		Value:       "Level_6",
 		RoleID:      "1392066278335840376", // Replace with actual role ID
@@ -77,6 +85,7 @@ var Quizzes = map[string]QuizInfo{
 	},
 	"Level_7": {
 		Label:       "Koten Kami (古典神)",
+		Level:       7,
 		Description: "JPDB 30K",
 		Value:       "Level_7",
 		RoleID:      "1392066430467440742", // Replace with actual role ID
