@@ -17,7 +17,6 @@ module.exports = [
   { id: '1384852168552743023', name: 'cortesdemanga' },
   { id: '1384852172776144937', name: 'JBF_actingSusNotMeOwO' },
   { id: '1384852180082888765', name: 'CryingManAnimated' },
-  { id: '1384852192699220041', name: 'znyanpantsuremoval' },
   { id: '1384852196134223922', name: 'saanimegirlshoot' },
   { id: '1384852202803429477', name: 'RaveWeebTC' },
   { id: '1384852208746627112', name: 'hanyaCheer' },
