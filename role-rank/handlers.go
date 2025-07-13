@@ -157,6 +157,12 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	if strings.HasPrefix(m.Content, "a!clear") {
+    HandleClearCommand(s, m)
+    return
+	}
+
+
 	if strings.HasPrefix(m.Content, "a!del") {
 		channel, err := s.State.Channel(m.ChannelID)
 		if err != nil {
@@ -203,59 +209,115 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 
 func HandleUserCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Check if message starts with k!quiz
 	if !strings.HasPrefix(m.Content, "k!quiz") {
 		return
 	}
 
-	// Find user's active quiz session
 	session, exists := activeQuizzes[m.Author.ID]
-	if !exists {
+	if !exists || m.ChannelID != session.ThreadID {
 		return
 	}
 
-	// Check if command is sent in the correct thread
-	if m.ChannelID != session.ThreadID {
-		return
-	}
-
-	// Mark quiz as started
+	// Tandai quiz dimulai
 	session.Started = true
 	activeQuizzes[m.Author.ID] = session
 
-	quiz, ok := Quizzes[session.QuizID]
-	if !ok {
-		return
-	}
-
-	command := quiz.Commands[session.Progress]
-
-	msg := "Quiz dimulai! Tunggu Kotoba Bot untuk memberikan pertanyaan..."
-	msg += "\n\nCommand saat ini:\n```" + command + "```"
-
-	s.ChannelMessageSend(m.ChannelID, msg)
-
-	// Send confirmation message
+	// Kirim pesan konfirmasi sederhana
 	_, err := s.ChannelMessageSend(m.ChannelID, "Quiz dimulai! Tunggu Kotoba Bot untuk memberikan pertanyaan...")
 	if err != nil {
-		log.Printf("Failed to send confirmation: %v", err)
+		log.Printf("Failed to send quiz start message: %v", err)
 	}
 }
 
+
 func HandleKotobaBotMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
-	// Check if message has embeds
 	if len(m.Embeds) == 0 {
 		return
 	}
 
-	// Look for congratulations message
 	for _, embed := range m.Embeds {
-		if embed.Description != "" && strings.Contains(embed.Description, "Congratulations!") {
-			HandleMultiStageQuizCompletion(s, m)
+		if embed.Description == "" || !strings.Contains(embed.Description, "Congratulations!") {
+			continue
+		}
+
+		// Temukan user dari session aktif
+		var userID string
+		var session QuizSession
+		for uid, sData := range activeQuizzes {
+			if sData.ThreadID == m.ChannelID && sData.Started {
+				userID = uid
+				session = sData
+				break
+			}
+		}
+		if userID == "" {
 			return
 		}
+
+		// Ambil quiz info dan data validasi
+		quiz, ok := Quizzes[session.QuizID]
+		if !ok || session.Progress >= len(quiz.Commands) {
+			return
+		}
+
+		expectedDeck := strings.ToLower(quiz.DeckNames[session.Progress])
+		expectedScore := strings.ToLower(quiz.ScoreLimits[session.Progress])
+
+		// Ambil deck name dari title embed (contoh: "jpdb300 Ended")
+		titleDeck := strings.ToLower(strings.Split(embed.Title, " ")[0])
+
+		// Ambil score limit dari embed fields
+		scoreLine := ""
+
+		// Coba cari di embed.Fields
+		if embed.Fields != nil {
+			for _, f := range embed.Fields {
+				if strings.Contains(strings.ToLower(f.Name), "score limit") {
+					scoreLine = strings.ToLower(f.Value)
+					break
+				}
+			}
+		}
+
+		// Jika masih kosong, cari di embed.Description
+		if scoreLine == "" && strings.Contains(strings.ToLower(embed.Description), "score limit of") {
+			// Contoh: "The score limit of 10 was reached by @Ardya. Congratulations!"
+			desc := strings.ToLower(embed.Description)
+			idx := strings.Index(desc, "score limit of ")
+			if idx != -1 {
+				rest := desc[idx+len("score limit of "):]
+				// ambil angka sampai spasi berikutnya
+				scoreParts := strings.Fields(rest)
+				if len(scoreParts) > 0 {
+					scoreLine = scoreParts[0]
+				}
+			}
+		}
+
+		// Ekstrak angka dari "scoreLine"
+		scoreParts := strings.Fields(scoreLine)
+		if len(scoreParts) == 0 {
+			s.ChannelMessageSend(session.ThreadID, "Command tidak sesuai sesi ini tidak dianggap. Silakan ulang dengan command yang sesuai.")
+			return
+		}
+		actualScore := scoreParts[0]
+
+if titleDeck != expectedDeck || actualScore != expectedScore {
+	s.ChannelMessageSend(session.ThreadID,
+		fmt.Sprintf(
+			"Command tidak sesuai.",
+		),
+	)
+	return
+}
+
+
+		// ✅ Semua valid → lanjut
+		HandleMultiStageQuizCompletion(s, m)
 	}
 }
+
+
 
 func GetCurrentQuizRoleLevel(member *discordgo.Member) (int, string) {
 	for _, roleID := range member.Roles {
