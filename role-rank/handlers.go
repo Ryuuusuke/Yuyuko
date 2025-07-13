@@ -264,7 +264,7 @@ func HandleKotobaBotMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		expectedScore := strings.ToLower(quiz.ScoreLimits[session.Progress])
 
 		// Ambil deck name dari title embed (contoh: "jpdb300 Ended")
-		titleDeck := strings.ToLower(strings.Split(embed.Title, " ")[0])
+		titleDeck := strings.ToLower(strings.TrimSuffix(embed.Title, " Ended"))
 
 		// Ambil score limit dari embed fields
 		scoreLine := ""
