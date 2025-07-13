@@ -64,7 +64,7 @@ var Quizzes = map[string]QuizInfo{
 	"Level_3": {
 		Label:       "Jōkyūsha (上級者)",
 		Level:       3,
-		Description: "JPDB Advance Level (1000-3000)",
+		Description: "JPDB Advance Level (100-3000)",
 		Value:       "Level_3",
 		RoleID:      "1392065673185857627", // Replace with actual role ID
 		Commands: []string{    
@@ -88,7 +88,7 @@ var Quizzes = map[string]QuizInfo{
 			"k!quiz jpdb3k5k 35 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
 		},
 		DeckNames: []string{
-			"jJLPT N2 Grammar",
+			"JLPT N2 Grammar",
 			"jpdb3k5k",
 		},
 		ScoreLimits: []string{
@@ -107,7 +107,7 @@ var Quizzes = map[string]QuizInfo{
 			"k!quiz jpdb5k10k 40 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
 		},
 		DeckNames: []string{
-			"jJLPT N1 Grammar",
+			"JLPT N1 Grammar",
 			"jpdb5k10k",
 		},
 		ScoreLimits: []string{
@@ -126,7 +126,7 @@ var Quizzes = map[string]QuizInfo{
 			"k!quiz jpdb10k20k 45 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
 		},
 		DeckNames: []string{
-			"jJLPT N1 Grammar",
+			"JLPT N1 Grammar",
 			"jpdb10k20k",
 		},
 		ScoreLimits: []string{
