@@ -23,7 +23,7 @@ var Quizzes = map[string]QuizInfo{
 		    "k!quiz hiragana+katakana nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100",
 		},
 		DeckNames: []string{
-			"multiple",
+			"Multiple Deck Quiz",
 		},
 		ScoreLimits: []string{
 			"10",
@@ -88,7 +88,7 @@ var Quizzes = map[string]QuizInfo{
 			"k!quiz jpdb3k5k 35 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
 		},
 		DeckNames: []string{
-			"JLPT N2 Grammar",
+			"JLPT N2 Grammar Quiz",
 			"jpdb3k5k",
 		},
 		ScoreLimits: []string{
@@ -107,7 +107,7 @@ var Quizzes = map[string]QuizInfo{
 			"k!quiz jpdb5k10k 40 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
 		},
 		DeckNames: []string{
-			"JLPT N1 Grammar",
+			"JLPT N1 Grammar Quiz",
 			"jpdb5k10k",
 		},
 		ScoreLimits: []string{
@@ -126,7 +126,7 @@ var Quizzes = map[string]QuizInfo{
 			"k!quiz jpdb10k20k 45 hardcore nd mmq=10 dauq=1 font=5 atl=16 color=#f173ff size=100 effect=antiocr",
 		},
 		DeckNames: []string{
-			"JLPT N1 Grammar",
+			"JLPT N1 Grammar Quiz",
 			"jpdb10k20k",
 		},
 		ScoreLimits: []string{
@@ -144,7 +144,7 @@ var Quizzes = map[string]QuizInfo{
 			"k!quiz jpdb20k30k+haado+cope+kunyomi1kfull+loli+Myouji+jpdefs+places_full 50 nd hardcore dauq=1 font=5 atl=16 mmq=9 color=#f173ff size=100 effect=antiocr",
 		},
 		DeckNames: []string{
-			"multiple",
+			"Multiple Deck Quiz",
 		},
 		ScoreLimits: []string{
 			"50",
