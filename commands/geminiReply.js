@@ -247,9 +247,16 @@ GAYA BICARA:
 - Gunakan referensi percakapan sebelumnya
 `;
 
-// === Main Mention Handler ===
-async function handleMention(message) {
-  const prompt = message.content.replace(/<@!?(\d+)>/, "").trim();
+// === Main Command Handler ===
+async function handleAyumiCommand(message) {
+  // Extract command content 
+  let prompt;
+  if (message.content.toLowerCase().startsWith('a!ayumi')) {
+    prompt = message.content.slice(7).trim(); // Remove "a!ayumi" prefix
+  } else {
+    // This is a reply to bot's message
+    prompt = message.content.trim();
+  }
   const userId = message.author.id;
   const username = message.author.username;
   const displayName = message.author.displayName;
@@ -261,23 +268,7 @@ async function handleMention(message) {
   const userInfo = getUserData(userId);
   const userName = getUserName(userId);
 
-  // Handle reply context
-  let replyContext = "";
-  if (message.reference?.messageId) {
-    try {
-      const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
-      if (repliedMessage.author.id === message.client.user.id) {
-        replyContext = `\n\nKONTEKS REPLY: User sedang merespon pesan Ayumi sebelumnya: "${repliedMessage.content.substring(0, 500)}${repliedMessage.content.length > 500 ? '...' : ''}"\n`;
-        if (userInfo) {
-          userInfo.lastBotMessage = repliedMessage.content;
-        }
-      }
-    } catch (err) {
-      console.log("Failed to fetch reply context:", err.message);
-    }
-  }
-
-  // Handle empty mention
+  // Handle empty command
   if (!prompt) {
     const greetings = userName
       ? [
@@ -433,7 +424,7 @@ async function handleMention(message) {
 }
 
 // === Exports ===
-module.exports = handleMention;
+module.exports = handleAyumiCommand;
 
 // Utility exports
 module.exports.trackImmersion = function(userId, activity, duration) {
