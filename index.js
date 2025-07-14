@@ -2,7 +2,7 @@ const { Client, Collection, GatewayIntentBits, REST, Routes } = require("discord
 const { DISCORD_TOKEN, CLIENT_ID } = require("./environment");
 const fs = require("fs");
 const path = require("path");
-const handleMention = require('./commands/geminiReply');
+const handleAyumiCommand = require('./commands/geminiReply'); // Updated import name
 const logCommand = require('./commands/log.js');
 const { checkRank, trackUserQuizStart } = require("./ranked/checkRank");
 
@@ -90,7 +90,13 @@ client.on("interactionCreate", async interaction => {
 
 client.on("messageCreate", async (message) => {
     try {
-        if (message.mentions.has(client.user)) await handleMention(message);
+        // Check for a!ayumi command (case insensitive)
+        if (message.content.toLowerCase().startsWith('a!ayumi')) {
+            await handleAyumiCommand(message);
+            return;
+        }
+        
+        // Other existing handlers
         if (message.content.startsWith("k!quiz")) trackUserQuizStart(message);
         if (message.author.id === "251239170058616833") await checkRank(message);
     } catch (error) {
