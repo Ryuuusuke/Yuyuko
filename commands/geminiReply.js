@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY } = require("../environment");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-04-17" });
+const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 const imageGenModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-preview-image-generation" });
 
 // In-memory user data
@@ -393,6 +393,20 @@ async function handleAyumiCommand(message) {
         const speaker = msg.type === "user" ? userName || "User" : "Ayumi";
         personalHistoryContext += `${speaker}: "${msg.content.substring(0, 150)}${msg.content.length > 150 ? '...' : ''}"\n`;
       });
+    }
+
+    let replyContext = "";
+    if (message.reference && message.reference.messageId) {
+      try {
+        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+        if (referencedMessage) {
+          const replyAuthor = referencedMessage.author.id === message.client.user.id ? 'Ayumi' : 
+                             (referencedMessage.member?.nickname || referencedMessage.author.username);
+          replyContext = `\n\nUser sedang reply ke pesan: "${referencedMessage.content.substring(0, 100)}" dari ${replyAuthor}\n`;
+        }
+      } catch (err) {
+        console.error("Error fetching referenced message:", err);
+      }
     }
 
     const fullPrompt = `${AYUMI_SYSTEM_PROMPT}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: "${prompt}"\n\nRespond as Ayumi:`;
