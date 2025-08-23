@@ -8,21 +8,26 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 )
+
 func OnReady(s *discordgo.Session, r *discordgo.Ready) {
 	fmt.Printf("Bot logged in as %s\n", s.State.User.Username)
-	
+
 	// Set bot status
 	err := s.UpdateGameStatus(0, "Japanese Quiz Master 🎌")
 	if err != nil {
 		log.Printf("Failed to set status: %v", err)
 	}
-	
+
 	// Send initial quiz selector to designated channel
 	channelID := "1392463011301691442" // Replace with your channel ID
 	SendQuizSelector(s, channelID)
+
+	// Start background sweeper to remove inactive quiz channels (1 day)
+	StartInactiveChannelSweeper(s)
 }
 
 var quizCategoryID = "1392514838118531132" // ganti dengan ID kategori quiz kamu
+var quizChannelTTL = 24 * time.Hour        // durasi tidak aktif sebelum channel quiz dihapus
 func OnInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i.Type != discordgo.InteractionMessageComponent {
 		return
@@ -131,6 +136,9 @@ Jangan lupa paste command langsung di channel ini ya!`,
 	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	})
+	if err != nil {
+		log.Printf("Gagal merespons interaction: %v", err)
+	}
 
 	msg, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 		Content: fmt.Sprintf("Channel private **%s** telah dibuat untuk quiz **%s**. Silakan lanjut di sana!", channel.Name, quiz.Label),
@@ -150,7 +158,6 @@ Jangan lupa paste command langsung di channel ini ya!`,
 	}()
 }
 
-
 func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Abaikan pesan bot (selain kotoba)
 	if m.Author.Bot && m.Author.ID != kotobaBotID {
@@ -158,10 +165,9 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.HasPrefix(m.Content, "a!clear") {
-    HandleClearCommand(s, m)
-    return
+		HandleClearCommand(s, m)
+		return
 	}
-
 
 	if strings.HasPrefix(m.Content, "a!del") {
 		channel, err := s.State.Channel(m.ChannelID)
@@ -207,7 +213,6 @@ func OnMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
-
 func HandleUserCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if !strings.HasPrefix(m.Content, "k!quiz") {
 		return
@@ -228,7 +233,6 @@ func HandleUserCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 		log.Printf("Failed to send quiz start message: %v", err)
 	}
 }
-
 
 func HandleKotobaBotMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if len(m.Embeds) == 0 {
@@ -302,22 +306,17 @@ func HandleKotobaBotMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		actualScore := scoreParts[0]
 
-if titleDeck != expectedDeck || actualScore != expectedScore {
-	s.ChannelMessageSend(session.ThreadID,
-		fmt.Sprintf(
-			"Command tidak sesuai.",
-		),
-	)
-	return
-}
-
+		if titleDeck != expectedDeck || actualScore != expectedScore {
+			s.ChannelMessageSend(session.ThreadID,
+				"Command tidak sesuai.",
+			)
+			return
+		}
 
 		// ✅ Semua valid → lanjut
 		HandleMultiStageQuizCompletion(s, m)
 	}
 }
-
-
 
 func GetCurrentQuizRoleLevel(member *discordgo.Member) (int, string) {
 	for _, roleID := range member.Roles {
@@ -329,7 +328,6 @@ func GetCurrentQuizRoleLevel(member *discordgo.Member) (int, string) {
 	}
 	return -1, ""
 }
-
 
 func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var completedUserID string
@@ -415,7 +413,6 @@ func HandleMultiStageQuizCompletion(s *discordgo.Session, m *discordgo.MessageCr
 	cleanupQuizChannel(s, completedUserID)
 }
 
-
 // helper untuk bersihkan session, delete channel setelah delay
 func cleanupQuizChannel(s *discordgo.Session, userID string) {
 	session, exists := activeQuizzes[userID]
@@ -430,6 +427,77 @@ func cleanupQuizChannel(s *discordgo.Session, userID string) {
 			log.Printf("Gagal menghapus channel: %v", err)
 		}
 	}(session.ThreadID)
+}
+
+// Background sweeper: delete inactive quiz channels (no activity for 24h)
+func StartInactiveChannelSweeper(s *discordgo.Session) {
+	// Run once at start
+	go sweepInactiveQuizChannels(s)
+
+	// Run hourly
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			sweepInactiveQuizChannels(s)
+		}
+	}()
+}
+
+func sweepInactiveQuizChannels(s *discordgo.Session) {
+	threshold := time.Now().Add(-quizChannelTTL)
+
+	for _, g := range s.State.Guilds {
+		channels, err := s.GuildChannels(g.ID)
+		if err != nil {
+			log.Printf("Gagal mengambil channel guild %s: %v", g.ID, err)
+			continue
+		}
+
+		for _, ch := range channels {
+			if ch == nil || ch.Type != discordgo.ChannelTypeGuildText {
+				continue
+			}
+			if ch.ParentID != quizCategoryID {
+				continue
+			}
+			// Skip selector channel
+			if ch.ID == "1392463011301691442" {
+				continue
+			}
+
+			msgs, err := s.ChannelMessages(ch.ID, 1, "", "", "")
+			if err != nil {
+				log.Printf("Gagal membaca pesan terakhir di channel %s: %v", ch.ID, err)
+				continue
+			}
+
+			// Determine last activity time
+			var lastActivity time.Time
+			if len(msgs) > 0 {
+				lastActivity = msgs[0].Timestamp
+			} else {
+				// No messages; skip deletion to be safe
+				continue
+			}
+
+			if lastActivity.Before(threshold) {
+				// Remove any tracked session bound to this channel
+				for uid, sess := range activeQuizzes {
+					if sess.ThreadID == ch.ID {
+						delete(activeQuizzes, uid)
+						break
+					}
+				}
+
+				if _, err := s.ChannelDelete(ch.ID); err != nil {
+					log.Printf("Gagal menghapus channel tidak aktif %s: %v", ch.ID, err)
+				} else {
+					log.Printf("Channel tidak aktif %s dihapus (last activity: %s)", ch.ID, lastActivity.Format(time.RFC3339))
+				}
+			}
+		}
+	}
 }
 
 func RespondWithError(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
