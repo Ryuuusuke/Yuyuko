@@ -1,45 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const db = require("../firebase/firestore");
+const { formatDate, getMediaTypeLabel } = require("../utils/formatters");
 
 // Store active messages for auto-refresh
 const activeMessages = new Map();
-
-// Helper function to format date
-function formatDate(timestamp) {
-  let logDate;
-  
-  // Handle Firestore Timestamp object
-  if (timestamp && typeof timestamp.toDate === 'function') {
-    logDate = timestamp.toDate();
-  } else if (timestamp instanceof Date) {
-    logDate = timestamp;
-  } else {
-    logDate = new Date(timestamp);
-  }
-  
-  const now = new Date();
-  const diffTime = now - logDate;
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  
-  // Convert to 24-hour format
-  const timeString = logDate.toLocaleTimeString('en-GB', { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    hour12: false 
-  });
-  
-  if (diffDays === 0) {
-    return `Today, ${timeString}`;
-  } else if (diffDays === 1) {
-    return `Yesterday, ${timeString}`;
-  } else {
-    return logDate.toLocaleDateString('en-GB', { 
-      weekday: 'long',
-      day: 'numeric',
-      month: 'short'
-    }) + `, ${timeString}`;
-  }
-}
 
 // Helper function to get logs from database
 async function getUserLogs(userId, timeframe, mediaType = null) {
@@ -187,19 +151,7 @@ function createLogEmbed(logs, page, totalPages, timeframe, user, mediaType = nul
   return embed;
 }
 
-// Helper function to get media type label
-function getMediaTypeLabel(mediaType) {
-  const labelMap = {
-    visual_novel: "Visual Novel",
-    manga: "Manga",
-    anime: "Anime", 
-    book: "Book",
-    reading_time: "Reading Time",
-    listening: "Listening",
-    reading: "Reading",
-  };
-  return labelMap[mediaType] || "Unknown";
-}
+
 
 // Helper function to create navigation buttons with delete buttons
 function createNavigationButtons(page, totalPages, timeframe, mediaType, logs) {
@@ -444,6 +396,7 @@ module.exports = {
 
   // Handle button interactions
   async handleButton(interaction) {
+    try {
     if (!interaction.customId.startsWith('log_') && 
         !interaction.customId.startsWith('media_') && 
         !interaction.customId.startsWith('delete_') &&
@@ -478,8 +431,7 @@ module.exports = {
       
       const user = interaction.user;
       
-      try {
-        const logs = await getUserLogs(user.id, timeframe, mediaType);
+      const logs = await getUserLogs(user.id, timeframe, mediaType);
         const totalPages = Math.ceil(logs.length / 10);
         const page = 0;
         
@@ -498,13 +450,10 @@ module.exports = {
           components: components 
         });
         
-        // PERBAIKAN: Dapatkan originalInteraction dari activeMessages
         const messageId = interaction.message?.id || interaction.id;
         let storedData = activeMessages.get(messageId);
         
-        // Jika tidak ada storedData, coba cari dengan interaction.id
         if (!storedData) {
-          // Cari berdasarkan userId dan timeframe
           for (const [key, value] of activeMessages.entries()) {
             if (value.userId === user.id && value.timeframe === timeframe) {
               storedData = value;
@@ -515,7 +464,6 @@ module.exports = {
         
         const originalInteraction = storedData?.originalInteraction || interaction;
         
-        // Clear existing timer
         if (storedData?.timer) {
           clearTimeout(storedData.timer);
         }
@@ -530,20 +478,10 @@ module.exports = {
           timer: null
         });
         
-        // Reset activity timer
         resetActivityTimer(messageId);
-        
-      } catch (error) {
-        console.error("Error fetching logs:", error);
-        await interaction.followUp({ 
-          content: "Failed to fetch logs. Please try again later.",
-          ephemeral: true 
-        });
-      }
       return;
     }
     
-    // Handle back to selection
     if (interaction.customId.startsWith('back_to_selection_')) {
       await interaction.deferUpdate();
       
@@ -572,7 +510,6 @@ module.exports = {
       
       const originalInteraction = storedData?.originalInteraction || interaction;
       
-      // Clear existing timer
       if (storedData?.timer) {
         clearTimeout(storedData.timer);
       }
@@ -585,95 +522,80 @@ module.exports = {
         timer: null
       });
       
-      // Reset activity timer
       resetActivityTimer(messageId);
       return;
     }
     
-    // Handle delete buttons
     if (interaction.customId.startsWith('delete_')) {
       await interaction.deferReply({ ephemeral: true });
       
       const logId = interaction.customId.replace('delete_', '');
       const user = interaction.user;
       
-      try {
-        // Get log details before deletion
-        const logDoc = await db.collection("users")
-          .doc(user.id)
-          .collection("immersion_logs")
-          .doc(logId)
-          .get();
+      const logDoc = await db.collection("users")
+        .doc(user.id)
+        .collection("immersion_logs")
+        .doc(logId)
+        .get();
+        
+      if (!logDoc.exists) {
+        await interaction.editReply({ 
+          content: "Log not found. It may have been already deleted." 
+        });
+        return;
+      }
+      
+      const logData = logDoc.data();
+      const activity = logData.activity;
+      
+      await db.collection("users")
+        .doc(user.id)
+        .collection("immersion_logs")
+        .doc(logId)
+        .delete();
+      
+      const userStatsRef = db.collection("users").doc(user.id);
+      
+      await db.runTransaction(async (transaction) => {
+        const userStatsDoc = await transaction.get(userStatsRef);
+        
+        if (userStatsDoc.exists) {
+          const currentData = userStatsDoc.data();
           
-        if (!logDoc.exists) {
-          await interaction.editReply({ 
-            content: "Log not found. It may have been already deleted." 
-          });
-          return;
-        }
-        
-        const logData = logDoc.data();
-        const activity = logData.activity;
-        
-        // Delete the log
-        await db.collection("users")
-          .doc(user.id)
-          .collection("immersion_logs")
-          .doc(logId)
-          .delete();
-        
-        // Update user stats (subtract the deleted amounts)
-        const userStatsRef = db.collection("users").doc(user.id);
-        
-        await db.runTransaction(async (transaction) => {
-          const userStatsDoc = await transaction.get(userStatsRef);
-          
-          if (userStatsDoc.exists) {
-            const currentData = userStatsDoc.data();
+          if (currentData.stats && currentData.stats[activity.type]) {
+            const currentTotal = currentData.stats[activity.type].total || 0;
+            const currentSessions = currentData.stats[activity.type].sessions || 0;
             
-            if (currentData.stats && currentData.stats[activity.type]) {
-              const currentTotal = currentData.stats[activity.type].total || 0;
-              const currentSessions = currentData.stats[activity.type].sessions || 0;
-              
-              const newTotal = Math.max(0, currentTotal - activity.amount);
-              const newSessions = Math.max(0, currentSessions - 1);
-              
-              currentData.stats[activity.type].total = newTotal;
-              currentData.stats[activity.type].sessions = newSessions;
-              
-              const totalSessions = Object.values(currentData.stats).reduce((sum, stat) => {
-                return sum + (stat.sessions || 0);
-              }, 0);
-              
-              currentData.summary.totalSessions = totalSessions;
-              currentData.timestamps.updated = new Date();
-              
-              transaction.set(userStatsRef, currentData, { merge: true });
-            }
+            const newTotal = Math.max(0, currentTotal - activity.amount);
+            const newSessions = Math.max(0, currentSessions - 1);
+            
+            currentData.stats[activity.type].total = newTotal;
+            currentData.stats[activity.type].sessions = newSessions;
+            
+            const totalSessions = Object.values(currentData.stats).reduce((sum, stat) => {
+              return sum + (stat.sessions || 0);
+            }, 0);
+            
+            currentData.summary.totalSessions = totalSessions;
+            currentData.timestamps.updated = new Date();
+            
+            transaction.set(userStatsRef, currentData, { merge: true });
           }
-        });
-        
-        await interaction.editReply({ 
-          content: `Successfully deleted log: **${activity.amount} ${activity.unit} of ${activity.typeLabel}**${activity.title && activity.title !== "-" ? ` - ${activity.title}` : ''}` 
-        });
-        
-        // PERBAIKAN: Auto-refresh dengan originalInteraction
-        const messageId = interaction.message?.id;
-        const messageData = activeMessages.get(messageId);
-        if (messageData && messageData.type === 'logs' && messageData.originalInteraction) {
-          await refreshLogView(messageData.originalInteraction, messageData);
         }
-        
-      } catch (error) {
-        console.error("Error deleting log:", error);
-        await interaction.editReply({ 
-          content: "Failed to delete log. Please try again later." 
-        });
+      });
+      
+      await interaction.editReply({ 
+        content: `Successfully deleted log: **${activity.amount} ${activity.unit} of ${activity.typeLabel}**${activity.title && activity.title !== "-" ? ` - ${activity.title}` : ''}` 
+      });
+      
+      const messageId = interaction.message?.id;
+      const messageData = activeMessages.get(messageId);
+      if (messageData && messageData.type === 'logs' && messageData.originalInteraction) {
+        await refreshLogView(messageData.originalInteraction, messageData);
       }
       return;
     }
     
-    // Handle pagination
     const parts = interaction.customId.split('_');
     const action = parts[1];
     const currentPage = parseInt(parts[2]);
@@ -686,43 +608,39 @@ module.exports = {
       const user = interaction.user;
       const newPage = action === 'prev' ? currentPage - 1 : currentPage + 1;
       
-      try {
-        const logs = await getUserLogs(user.id, timeframe, mediaType);
-        const totalPages = Math.ceil(logs.length / 10);
-        
-        if (newPage < 0 || newPage >= totalPages) {
-          return;
-        }
-        
-        const embed = createLogEmbed(logs, newPage, totalPages, timeframe, user, mediaType);
-        const components = createNavigationButtons(newPage, totalPages, timeframe, mediaType, logs);
-        
-        await interaction.editReply({ 
-          embeds: [embed], 
-          components: components 
-        });
-        
-        const messageId = interaction.message?.id || interaction.id;
-        const messageData = activeMessages.get(messageId);
-        if (messageData) {
-          // Clear existing timer
-          if (messageData.timer) {
-            clearTimeout(messageData.timer);
-          }
-          messageData.currentPage = newPage;
-          activeMessages.set(messageId, messageData);
-          
-          // Reset activity timer
-          resetActivityTimer(messageId);
-        }
-        
-      } catch (error) {
-        console.error("Error handling pagination:", error);
-        await interaction.followUp({ 
-          content: "Failed to update logs. Please try again.", 
-          ephemeral: true 
-        });
+      const logs = await getUserLogs(user.id, timeframe, mediaType);
+      const totalPages = Math.ceil(logs.length / 10);
+      
+      if (newPage < 0 || newPage >= totalPages) {
+        return;
       }
+      
+      const embed = createLogEmbed(logs, newPage, totalPages, timeframe, user, mediaType);
+      const components = createNavigationButtons(newPage, totalPages, timeframe, mediaType, logs);
+      
+      await interaction.editReply({ 
+        embeds: [embed], 
+        components: components 
+      });
+      
+      const messageId = interaction.message?.id || interaction.id;
+      const messageData = activeMessages.get(messageId);
+      if (messageData) {
+        if (messageData.timer) {
+          clearTimeout(messageData.timer);
+        }
+        messageData.currentPage = newPage;
+        activeMessages.set(messageId, messageData);
+        
+        resetActivityTimer(messageId);
+      }
+    }
+  } catch (error) {
+      console.error("Error in handleButton:", error);
+      await interaction.followUp({ 
+        content: "An error occurred while handling the button interaction. Please try again later.",
+        ephemeral: true 
+      });
     }
   }
 };
