@@ -2,31 +2,7 @@ const { SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const db = require("../firebase/firestore");
 const fs = require("fs");
 const path = require("path");
-
-// Helper function to format date
-function formatDate(timestamp) {
-  let logDate;
-  
-  // Handle Firestore Timestamp object
-  if (timestamp && typeof timestamp.toDate === 'function') {
-    logDate = timestamp.toDate();
-  } else if (timestamp instanceof Date) {
-    logDate = timestamp;
-  } else {
-    logDate = new Date(timestamp);
-  }
-  
-  return logDate.toLocaleDateString('en-GB', { 
-    weekday: 'long',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  }) + " at " + logDate.toLocaleTimeString('en-GB', { 
-    hour: '2-digit', 
-    minute: '2-digit',
-    hour12: false 
-  });
-}
+const { formatDate, getMediaTypeLabel, getUnitForType, getTimeframeLabel } = require("../utils/formatters");
 
 // Helper function to get logs from database
 async function getUserLogs(userId, timeframe, mediaType = null) {
@@ -159,46 +135,6 @@ function generateExportContent(logs, timeframe, mediaType, username) {
   });
   
   return content;
-}
-
-// Helper function to get media type label
-function getMediaTypeLabel(mediaType) {
-  const labelMap = {
-    visual_novel: "Visual Novel",
-    manga: "Manga",
-    anime: "Anime", 
-    book: "Book",
-    reading_time: "Reading Time",
-    listening: "Listening",
-    reading: "Reading",
-  };
-  return labelMap[mediaType] || mediaType;
-}
-
-// Helper function to get unit for type
-function getUnitForType(type) {
-  const unitMap = {
-    visual_novel: "characters",
-    manga: "pages",
-    anime: "episodes", 
-    book: "pages",
-    reading_time: "minutes",
-    listening: "minutes",
-    reading: "characters",
-  };
-  return unitMap[type] || "units";
-}
-
-// Helper function to get timeframe label
-function getTimeframeLabel(timeframe) {
-  const labelMap = {
-    day: "Last 24 Hours",
-    week: "Last 7 Days",
-    month: "Last 30 Days",
-    year: "Last 365 Days",
-    all: "All Time"
-  };
-  return labelMap[timeframe] || timeframe;
 }
 
 module.exports = {

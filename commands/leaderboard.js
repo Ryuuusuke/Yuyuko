@@ -1,53 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const db = require("../firebase/firestore");
-
-// Points multipliers from stat.js
-const pointsMultipliers = {
-  visual_novel: 0.0028571428571429,
-  manga: 0.25,
-  anime: 13.0,
-  book: 1.0,
-  reading_time: 0.67,
-  listening: 0.67,
-  reading: 0.0028571428571429,
-};
-
-// Label map for media types (from stat.js + 'all')
-const mediaTypeLabelMap = { // Renamed for clarity
-  visual_novel: "Visual Novel",
-  manga: "Manga",
-  anime: "Anime",
-  book: "Book",
-  reading_time: "Reading Time",
-  listening: "Listening",
-  reading: "Reading",
-  all: "All Media Types"
-};
-
-// New label map for timestamp periods
-const timestampLabelMap = {
-  weekly: "Weekly",
-  monthly: "Monthly",
-  yearly: "Yearly",
-  all_time: "All-time"
-};
+const { calculatePoints } = require("../utils/points");
+const { mediaTypeLabelMap, unitMap } = require("../utils/config");
 
 
-// Unit map for media types (from stat.js)
-const unitMap = {
-  visual_novel: "characters",
-  manga: "pages",
-  anime: "episodes",
-  book: "pages",
-  reading_time: "minutes",
-  listening: "minutes",
-  reading: "characters",
-};
-
-// Function to get points multiplier (from stat.js)
-function getPointsMultiplier(mediaType) {
-  return pointsMultipliers[mediaType];
-}
 
 module.exports = {
   name: "leaderboard",
@@ -202,7 +158,7 @@ module.exports = {
           for (const mediaType in stats) {
             if (mediaTypeFilter === "all" || mediaTypeFilter === mediaType) {
               const totalAmount = stats[mediaType].total || 0;
-              userTotalPoints += totalAmount * (getPointsMultiplier(mediaType) || 0);
+              userTotalPoints += calculatePoints(mediaType, totalAmount);
               if (mediaTypeFilter === mediaType) {
                 userTotalAmount += totalAmount;
               }
@@ -227,7 +183,7 @@ module.exports = {
             const logAmount = logData.activity.amount;
 
             if (mediaTypeFilter === "all" || mediaTypeFilter === logMediaType) {
-              userTotalPoints += logAmount * (getPointsMultiplier(logMediaType) || 0);
+              userTotalPoints += calculatePoints(logMediaType, logAmount);
               if (mediaTypeFilter === logMediaType) {
                 userTotalAmount += logAmount;
               }

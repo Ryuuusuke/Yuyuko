@@ -5,85 +5,7 @@ const { updateUserStreak } = require("../utils/streak");
 const { getUserStreakByMedia, getUserStreak } = require("../utils/streak"); 
 const { getMediaInfo, searchAniList, getAniListInfoById } = require("../utils/anilistAPI");
 const { getVNInfo, getVNInfoById, searchVNs } = require("../utils/vndbAPI");
-const axios = require("axios"); // Add this for YouTube API calls
-
-// YouTube API configuration
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Add your API key to environment variables
-
-// Function to extract video ID from YouTube URL
-function extractYouTubeVideoId(url) {
-  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
-  const match = url.match(regex);
-  return match ? match[1] : url; // Return the ID or the original string if it's already an ID
-}
-
-// Function to get YouTube video info using YouTube Data API v3
-async function getYouTubeVideoInfo(videoId) {
-  try {
-    const response = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
-      params: {
-        part: 'snippet,contentDetails',
-        id: videoId,
-        key: YOUTUBE_API_KEY
-      }
-    });
-
-    if (response.data.items && response.data.items.length > 0) {
-      const video = response.data.items[0];
-      const snippet = video.snippet;
-      const contentDetails = video.contentDetails;
-      
-      // Parse duration from ISO 8601 format (PT1H2M10S) to seconds
-      const duration = parseDuration(contentDetails.duration);
-      
-      return {
-        title: snippet.title,
-        duration: duration, // in seconds
-        thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.default?.url
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    console.error("YouTube API Error:", error.response?.data || error.message);
-    throw error;
-  }
-}
-
-// Function to parse ISO 8601 duration format to seconds
-function parseDuration(duration) {
-  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return 0;
-  
-  const hours = parseInt(match[1]) || 0;
-  const minutes = parseInt(match[2]) || 0;
-  const seconds = parseInt(match[3]) || 0;
-  
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-// Function to normalize YouTube URL
-function normalizeYouTubeUrl(inputUrl) {
-  if (!inputUrl) return null;
-  
-  let normalizedUrl = inputUrl.trim();
-  
-  if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
-    return normalizedUrl;
-  }
-  
-  if (normalizedUrl.startsWith('www.')) {
-    return `https://${normalizedUrl}`;
-  }
-  
-  if (normalizedUrl.startsWith('youtube.com') || 
-      normalizedUrl.startsWith('youtu.be') || 
-      normalizedUrl.startsWith('m.youtube.com')) {
-    return `https://${normalizedUrl}`;
-  }
-  
-  return `https://youtube.com/watch?v=${normalizedUrl}`;
-}
+const { extractYouTubeVideoId, getYouTubeVideoInfo, normalizeYouTubeUrl } = require("../utils/youtube");
 
 module.exports = {
   name: "immersion",
@@ -120,6 +42,11 @@ module.exports = {
       option
         .setName("comment")
         .setDescription("Komentar atau catatan tambahan")
+        .setRequired(false))
+    .addStringOption(option =>
+      option
+        .setName("date")
+        .setDescription("Tanggal dalam format YYYY-MM-DD (opsional, default: hari ini)")
         .setRequired(false)),
 
   async execute(interaction) {
@@ -134,6 +61,7 @@ module.exports = {
     let amount = interaction.options.getNumber("amount");
     let title = interaction.options.getString("title") || "-";
     const comment = interaction.options.getString("comment") || "-";
+    const customDate = interaction.options.getString("date");
     const user = interaction.user;
     let thumbnail = null;
     let rawTitle = title;
@@ -141,6 +69,56 @@ module.exports = {
     let anilistInfo = null;
     let vndbInfo = null;
     let url = null;
+
+    // Validate custom date if provided
+    let inputDate, localDate, dateStr, now;
+    if (customDate) {
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(customDate)) {
+        return await interaction.editReply({
+          content: "Invalid date format. Please use YYYY-MM-DD (e.g., 2024-01-15)."
+        });
+      }
+
+      inputDate = new Date(customDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Validate date is not in the future
+      if (inputDate > today) {
+        return await interaction.editReply({
+          content: "Cannot log immersion for future dates."
+        });
+      }
+
+      // Validate date is not too old (more than 1 year)
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      
+      if (inputDate < oneYearAgo) {
+        return await interaction.editReply({
+          content: "Cannot log immersion for dates older than 1 year."
+        });
+      }
+
+      // Use custom date
+      localDate = new Date(customDate);
+      dateStr = customDate;
+      now = new Date(); // For database timestamps
+    } else {
+      // Use today's date
+      now = new Date();
+      localDate = new Date(
+        now.getFullYear(), now.getMonth(), now.getDate()
+      );
+      
+      dateStr = [
+        localDate.getFullYear(),
+        String(localDate.getMonth() + 1).padStart(2, '0'),
+        String(localDate.getDate()).padStart(2, '0')
+      ].join('-');
+    }
 
     // Listening URL logic with YouTube API
     if (media_type === "listening") {
@@ -171,9 +149,7 @@ module.exports = {
         if (userInput !== 'skip') {
           url = response.content.trim();
           
-          try {
-            // Extract video ID from URL or use the input directly if it's already an ID
-            const videoId = extractYouTubeVideoId(url);
+          const videoId = extractYouTubeVideoId(url);
             
             // Get video info from YouTube API
             const videoInfo = await getYouTubeVideoInfo(videoId);
@@ -200,15 +176,6 @@ module.exports = {
             } catch (err) {
               // Ignore delete errors
             }
-            
-          } catch (err) {
-            console.error("❌ Gagal mengambil info dari YouTube API:", err);
-            await interaction.followUp({
-              content: "❌ Gagal mengambil data video dari YouTube API. Melanjutkan tanpa info video...",
-              ephemeral: true
-            });
-            url = null;
-          }
         } else {
           try {
             await response.delete();
@@ -227,7 +194,6 @@ module.exports = {
 
     // VNDB info logic (unchanged)
     if (title && title !== "-" && media_type === "visual_novel") {
-      try {
         if (title.includes('|')) {
           const [vnTitle, vnId] = title.split('|');
           rawTitle = vnTitle;
@@ -243,14 +209,10 @@ module.exports = {
             thumbnail = vndbInfo.image;
           }
         }
-      } catch (err) {
-        console.error("⚠️ Gagal mengambil info dari VNDB:", err);
-      }
     }
 
     // AniList info logic (unchanged)
     if (title && title !== "-" && ['anime', 'manga'].includes(media_type)) {
-      try {
         if (title.includes('|')) {
           const [aniTitle, aniId] = title.split('|');
           rawTitle = aniTitle;
@@ -267,9 +229,6 @@ module.exports = {
             thumbnail = anilistInfo.image;
           }
         }
-      } catch (err) {
-        console.error("⚠️ Gagal mengambil info dari AniList:", err);
-      }
     }
 
     const unitMap = {
@@ -295,17 +254,6 @@ module.exports = {
     const unit = unitMap[media_type];
     const label = labelMap[media_type];
     
-    const now = new Date();
-    const localDate = new Date(
-      now.getFullYear(), now.getMonth(), now.getDate()
-    );
-    
-    const dateStr = [
-      localDate.getFullYear(),
-      String(localDate.getMonth() + 1).padStart(2, '0'),
-      String(localDate.getDate()).padStart(2, '0')
-    ].join('-');
-
     try {
       // Get image URL
       let imageUrl = null;
@@ -352,7 +300,7 @@ module.exports = {
           } : null
         },
         timestamps: {
-          created: now,
+          created: customDate ? new Date() : now,
           date: dateStr,
           month: dateStr.slice(0, 7),
           year: localDate.getFullYear()
@@ -405,7 +353,7 @@ module.exports = {
           ...currentData.stats[media_type],
           total: newTotal,
           sessions: newSessions,
-          lastActivity: now,
+          lastActivity: customDate ? new Date() : now,
           unit: unit,
           label: label
         };
@@ -421,7 +369,7 @@ module.exports = {
           username: user.username,
           displayName: user.displayName || user.username,
           avatar: user.displayAvatarURL({ size: 64 }),
-          lastSeen: now
+          lastSeen: customDate ? new Date() : now
         };
         
         // Update summary
@@ -436,15 +384,15 @@ module.exports = {
         currentData.summary = {
           ...currentData.summary,
           totalSessions: totalSessions,
-          lastActivity: now,
-          joinDate: currentData.summary?.joinDate || now,
+          lastActivity: customDate ? new Date() : now,
+          joinDate: currentData.summary?.joinDate || (customDate ? new Date() : now),
           activeTypes: Object.keys(currentData.stats)
         };
         
         // Update timestamps
         currentData.timestamps = {
-          updated: now,
-          lastLog: now
+          updated: customDate ? new Date() : now,
+          lastLog: customDate ? new Date() : now
         };
         
         // Write the updated data
@@ -544,7 +492,7 @@ module.exports = {
 
     } catch (err) {
       console.error("Error in immersion command:", err);
-      await interaction.editReply({ content: "❌ Gagal mencatat immersion. Error: " + err.message });
+      await interaction.editReply({ content: "Gagal mencatat immersion. Error: " + err.message });
     }
   },
 

@@ -2,8 +2,13 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const fs = require("fs");
 const path = require("path");
 
-const novelDataPath = path.join(__dirname, "../utils/novelList.json");
-const novels = JSON.parse(fs.readFileSync(novelDataPath, "utf8"));
+let novels = [];
+try {
+    const novelDataPath = path.join(__dirname, "../utils/novelList.json");
+    novels = JSON.parse(fs.readFileSync(novelDataPath, "utf8"));
+} catch (error) {
+    console.error("Error reading novel data:", error);
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -19,6 +24,11 @@ module.exports = {
   async execute(interaction) {
     const query = interaction.options.getString("title").toLowerCase();
     await interaction.deferReply();
+
+    // Check if novels data was loaded successfully
+    if (novels.length === 0) {
+      return await interaction.editReply("❌ Gagal memuat data novel. Silakan hubungi administrator.");
+    }
 
     const results = novels.filter(novel =>
       novel.title.toLowerCase().includes(query)
@@ -103,7 +113,7 @@ module.exports = {
           new ButtonBuilder().setCustomId("prev").setLabel("⬅Prev").setStyle(ButtonStyle.Secondary).setDisabled(true),
           new ButtonBuilder().setCustomId("next").setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(true)
         );
-      await message.edit({ components: [disabledRow] });
+      await message.edit({ components: [disabledRow] }).catch(console.error);
     });
   }
 };

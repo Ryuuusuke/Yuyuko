@@ -4,6 +4,8 @@ const { getUserStreak } = require("../utils/streak");
 const { createCanvas } = require('canvas');
 const Chart = require('chart.js/auto');
 const generateHeatmapImage = require('../utils/generateHeatmapImage'); // Your new heatmap file
+const { calculatePoints, pointsMultipliers } = require("../utils/points");
+const { mediaTypeLabelMap, unitMap } = require("../utils/config");
 
 module.exports = {
   name: "stat",
@@ -100,108 +102,83 @@ module.exports = {
       }
     }
 
-    // Original stat display code
-    const { streak, longest } = await getUserStreak(user.id);
+    try {
+      // Original stat display code
+      const { streak, longest } = await getUserStreak(user.id);
 
-    const pointsMultipliers = {
-      visual_novel: 0.0028571428571429,
-      manga: 0.25,
-      anime: 13.0,
-      book: 1.0,
-      reading_time: 0.67,
-      listening: 0.67,
-      reading: 0.0028571428571429,
-    };
+      let totalPoints = 0;
+      let totalSessions = 0;
+      const statEntries = [];
 
-    const labelMap = {
-      visual_novel: "Visual Novel",
-      manga: "Manga",
-      anime: "Anime",
-      book: "Book",
-      reading_time: "Reading Time",
-      listening: "Listening",
-      reading: "Reading",
-    };
+      for (const [type, data] of Object.entries(stats)) {
+        if (data.total > 0) {
+          const points = calculatePoints(type, data.total);
+          totalPoints += points;
+          totalSessions += data.sessions || 0;
+          
+          statEntries.push({
+            label: mediaTypeLabelMap[type] || type,
+            total: data.total,
+            unit: unitMap[type] || 'units',
+            sessions: data.sessions || 0,
+            points: points,
+            type: type
+          });
+        }
+      }
 
-    const unitMap = {
-      visual_novel: "characters",
-      manga: "pages",
-      anime: "episodes",
-      book: "pages",
-      reading_time: "minutes",
-      listening: "minutes",
-      reading: "characters",
-    };
-
-    let totalPoints = 0;
-    let totalSessions = 0;
-    const statEntries = [];
-
-    for (const [type, data] of Object.entries(stats)) {
-      if (data.total > 0) {
-        const points = Math.round(data.total * (pointsMultipliers[type] || 1));
-        totalPoints += points;
-        totalSessions += data.sessions || 0;
+      if (statEntries.length === 0) {
+        const embed = new EmbedBuilder()
+          .setColor(0x95a5a6)
+          .setTitle(`📊 Immersion Stats`)
+          .setDescription("Belum ada aktivitas yang tercatat.")
+          .setTimestamp();
         
-        statEntries.push({
-          label: labelMap[type] || type,
-          total: data.total,
-          unit: unitMap[type] || 'units',
-          sessions: data.sessions || 0,
-          points: points,
-          type: type
+        return await interaction.editReply({ embeds: [embed] });
+      }
+
+      statEntries.sort((a, b) => b.points - a.points);
+
+      const embed = new EmbedBuilder()
+        .setColor(0x2ecc71)
+        .setTitle(`📊 Immersion Stats – ${profile?.displayName || profile?.username || user.username}`)
+        .setDescription(`**Total Points: ${totalPoints.toLocaleString()}** • **Total Sessions: ${totalSessions}**\n\n*Tip: Use \`/stat visual_type:barchart\` or \`/stat visual_type:heatmap\`\nuntuk melihat visualisasi!*`)
+        .setTimestamp();
+
+      if (profile?.avatar) {
+        embed.setThumbnail(profile.avatar);
+      }
+
+      for (const stat of statEntries) {
+        const percentage = totalPoints > 0 ? ((stat.points / totalPoints) * 100).toFixed(1) : 0;
+        embed.addFields({
+          name: `${stat.label}`,
+          value: `**${stat.total.toLocaleString()}** ${stat.unit}\n` +
+                 `${stat.points.toLocaleString()} pts (${percentage}%)\n` +
+                 `${stat.sessions} sessions`,
+          inline: true,
         });
       }
+
+      embed.addFields(
+        { name: "\u200b", value: "\u200b", inline: false },
+        { name: "Current Streak", value: `${streak} day${streak !== 1 ? 's' : ''}`, inline: true },
+        { name: "Longest Streak", value: `${longest} day${longest !== 1 ? 's' : ''}`, inline: true }
+      );
+
+      const lastActivity = summary?.lastActivity;
+      if (lastActivity) {
+        embed.setFooter({
+          text: `Last activity: ${lastActivity.toDate().toLocaleDateString()}`,
+          iconURL: user.displayAvatarURL({ size: 32 })
+        });
+      }
+
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      console.error("Error generating stats:", error);
+      return await interaction.editReply("❌ Gagal membuat statistik. Silakan coba lagi.");
     }
-
-    if (statEntries.length === 0) {
-      const embed = new EmbedBuilder()
-        .setColor(0x95a5a6)
-        .setTitle(`📊 Immersion Stats`)
-        .setDescription("Belum ada aktivitas yang tercatat.")
-        .setTimestamp();
-      
-      return await interaction.editReply({ embeds: [embed] });
-    }
-
-    statEntries.sort((a, b) => b.points - a.points);
-
-    const embed = new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle(`📊 Immersion Stats – ${profile?.displayName || profile?.username || user.username}`)
-      .setDescription(`**Total Points: ${totalPoints.toLocaleString()}** • **Total Sessions: ${totalSessions}**\n\n*Tip: Use \`/stat visual_type:barchart\` or \`/stat visual_type:heatmap\` untuk melihat visualisasi!*`)
-      .setTimestamp();
-
-    if (profile?.avatar) {
-      embed.setThumbnail(profile.avatar);
-    }
-
-    for (const stat of statEntries) {
-      const percentage = totalPoints > 0 ? ((stat.points / totalPoints) * 100).toFixed(1) : 0;
-      embed.addFields({
-        name: `${stat.label}`,
-        value: `**${stat.total.toLocaleString()}** ${stat.unit}\n` +
-               `${stat.points.toLocaleString()} pts (${percentage}%)\n` +
-               `${stat.sessions} sessions`,
-        inline: true,
-      });
-    }
-
-    embed.addFields(
-      { name: "\u200b", value: "\u200b", inline: false },
-      { name: "Current Streak", value: `${streak} day${streak !== 1 ? 's' : ''}`, inline: true },
-      { name: "Longest Streak", value: `${longest} day${longest !== 1 ? 's' : ''}`, inline: true }
-    );
-
-    const lastActivity = summary?.lastActivity;
-    if (lastActivity) {
-      embed.setFooter({ 
-        text: `Last activity: ${lastActivity.toDate().toLocaleDateString()}`,
-        iconURL: user.displayAvatarURL({ size: 32 })
-      });
-    }
-
-    await interaction.editReply({ embeds: [embed] });
   }
 };
 
@@ -220,15 +197,6 @@ async function getHeatmapData(userId, year = null) {
     .get();
 
   const dailyTotals = {};
-  const pointsMultipliers = {
-    visual_novel: 0.0028571428571429,
-    manga: 0.25,
-    anime: 13.0,
-    book: 1.0,
-    reading_time: 0.67,
-    listening: 0.67,
-    reading: 0.0028571428571429,
-  };
 
   logs.forEach(doc => {
     const data = doc.data();
@@ -249,7 +217,7 @@ async function getHeatmapData(userId, year = null) {
       dailyTotals[dateStr] = 0;
     }
     
-    const points = Math.round(amount * (pointsMultipliers[mediaType] || 1));
+    const points = calculatePoints(mediaType, amount);
     dailyTotals[dateStr] += points;
   });
 
@@ -272,26 +240,6 @@ async function generateBarChart(userId, days = null) {
     reading_time: '#f39c12',
     listening: '#1abc9c',
     reading: '#e67e22'
-  };
-
-  const labelMap = {
-    visual_novel: "Visual Novel",
-    manga: "Manga",
-    anime: "Anime",
-    book: "Book",
-    reading_time: "Reading Time",
-    listening: "Listening",
-    reading: "Reading",
-  };
-
-  const pointsMultipliers = {
-    visual_novel: 0.0028571428571429,
-    manga: 0.25,
-    anime: 13.0,
-    book: 1.0,
-    reading_time: 0.67,
-    listening: 0.67,
-    reading: 0.0028571428571429,
   };
 
   let chartData, chartLabels, chartTitle;
@@ -424,7 +372,7 @@ async function getTimeBasedData(userId, days) {
       dailyData[dateStr][mediaType] = 0;
     }
     
-    const points = Math.round(data.activity.amount * (getPointsMultiplier(mediaType) || 1));
+    const points = calculatePoints(mediaType, data.activity.amount);
     dailyData[dateStr][mediaType] += points;
     mediaTypes.add(mediaType);
   });
@@ -459,16 +407,6 @@ async function getTimeBasedData(userId, days) {
     reading: '#e67e22'
   };
 
-  const labelMap = {
-    visual_novel: "Visual Novel",
-    manga: "Manga",
-    anime: "Anime",
-    book: "Book",
-    reading_time: "Reading Time",
-    listening: "Listening",
-    reading: "Reading",
-  };
-
   const datasets = [];
   
   // Sort media types by total points (descending) for better visual hierarchy
@@ -484,7 +422,7 @@ async function getTimeBasedData(userId, days) {
     });
 
     datasets.push({
-      label: labelMap[mediaType] || mediaType,
+      label: mediaTypeLabelMap[mediaType] || mediaType,
       data: data,
       backgroundColor: mediaColors[mediaType] || '#95a5a6',
       borderColor: mediaColors[mediaType] || '#95a5a6',
@@ -521,20 +459,10 @@ async function getOverallData(userId) {
     reading: '#e67e22'
   };
 
-  const labelMap = {
-    visual_novel: "Visual Novel",
-    manga: "Manga",
-    anime: "Anime",
-    book: "Book",
-    reading_time: "Reading Time",
-    listening: "Listening",
-    reading: "Reading",
-  };
-
   for (const [type, statData] of Object.entries(stats)) {
     if (statData.total > 0) {
-      const points = Math.round(statData.total * (getPointsMultiplier(type) || 1));
-      labels.push(labelMap[type] || type);
+      const points = calculatePoints(type, statData.total);
+      labels.push(mediaTypeLabelMap[type] || type);
       data.push(points);
       backgroundColors.push(mediaColors[type] || '#95a5a6');
     }
@@ -553,17 +481,4 @@ async function getOverallData(userId) {
     },
     labels: labels
   };
-}
-
-function getPointsMultiplier(mediaType) {
-  const multipliers = {
-    visual_novel: 0.0028571428571429,
-    manga: 0.25,
-    anime: 13.0,
-    book: 1.0,
-    reading_time: 0.67,
-    listening: 0.67,
-    reading: 0.0028571428571429,
-  };
-  return multipliers[mediaType];
 }

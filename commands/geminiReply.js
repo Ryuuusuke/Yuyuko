@@ -47,7 +47,6 @@ function getUserName(userId) {
 }
 
 async function getConversationHistory(message, limit = 5) {
-  try {
     const messages = await message.channel.messages.fetch({ 
       limit: limit + 1,
       before: message.id,
@@ -71,24 +70,15 @@ async function getConversationHistory(message, limit = 5) {
     }
     
     return history;
-  } catch (err) {
-    console.error("Error fetching conversation history:", err.message);
-    return [];
-  }
 }
 
 // === Image Processing Functions ===
 
 async function downloadImage(url) {
-  try {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
-  } catch (error) {
-    console.error('Error downloading image:', error);
-    throw error;
-  }
 }
 
 function detectAvatarQuestions(text) {
@@ -114,7 +104,6 @@ function detectImageGeneration(text) {
 }
 
 async function analyzeImage(imageUrl, userName, userQuestion, isAvatar = false) {
-  try {
     const imageData = await downloadImage(imageUrl);
     
     const analysisPrompt = `
@@ -149,10 +138,6 @@ Respons as Ayumi:`;
     ]);
 
     return result.response.text();
-  } catch (error) {
-    console.error('Error analyzing image:', error);
-    throw error;
-  }
 }
 
 // Simplified image generation with fallback
@@ -185,7 +170,6 @@ async function generateImage(prompt, userName) {
   ];
 
   for (let i = 0; i < methods.length; i++) {
-    try {
       const result = await methods[i]();
       const response = result.response;
       
@@ -203,10 +187,6 @@ async function generateImage(prompt, userName) {
           };
         }
       }
-    } catch (error) {
-      console.error(`Image generation method ${i + 1} failed:`, error);
-      if (i === methods.length - 1) throw error;
-    }
   }
   
   throw new Error('All image generation methods failed');
@@ -246,6 +226,146 @@ GAYA BICARA:
 - Tunjukkan kalau Ayumi *ingat* dan *paham*
 - Gunakan referensi percakapan sebelumnya
 `;
+
+
+async function handleImageGeneration(message, prompt, userName, userId) {
+    const generatingMessage = await message.reply(
+        userName 
+          ? `${userName}, Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~`
+          : "Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~"
+      );
+
+      try {
+        const imageResult = await generateImage(prompt, userName);
+        
+        if (imageResult.success && imageResult.imageData) {
+          const imageBuffer = Buffer.from(imageResult.imageData, 'base64');
+          const extension = imageResult.mimeType.includes('png') ? 'png' : 'jpg';
+          const fileName = `ayumi_generated_${Date.now()}.${extension}`;
+          
+          const successResponse = userName
+            ? `${userName}, nih gambar yang Ayumi buatin! Gimana, sesuai ekspektasi gak?`
+            : "Nih gambar yang Ayumi buatin! Gimana, sesuai ekspektasi gak?";
+          
+          await message.channel.send({
+            content: successResponse,
+            files: [{ attachment: imageBuffer, name: fileName }]
+          });
+          
+          await generatingMessage.delete();
+          updateConversationHistory(userId, prompt, successResponse);
+          return;
+        }
+      } catch (imageGenError) {
+        console.error('Image generation failed:', imageGenError);
+        
+        try {
+          await generatingMessage.delete();
+        } catch (e) {}
+        
+        const fallbackResponse = userName 
+          ? `${userName}, maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~`
+          : "Maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~";
+        return message.reply(fallbackResponse);
+      }
+}
+
+
+async function handleImageAnalysis(message, prompt, userName, userId, imageAttachment) {
+    try {
+        const imageAnalysis = await analyzeImage(imageAttachment.url, userName, prompt, false);
+        await message.reply(imageAnalysis);
+        updateConversationHistory(userId, `[Mengirim gambar] ${prompt}`, imageAnalysis);
+        return;
+      } catch (imageError) {
+        console.error('Image analysis failed:', imageError);
+        const fallbackResponse = userName 
+          ? `${userName}, Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~`
+          : "Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~";
+        return message.reply(fallbackResponse);
+      }
+}
+
+
+async function handleAvatarAnalysis(message, prompt, userName, userId) {
+    const avatarURL = message.author.displayAvatarURL({ 
+        format: 'png', 
+        size: 512,
+        dynamic: true 
+      });
+      
+      try {
+        const avatarAnalysis = await analyzeImage(avatarURL, userName, prompt, true);
+        await message.reply(avatarAnalysis);
+        updateConversationHistory(userId, prompt, avatarAnalysis);
+        return;
+      } catch (avatarError) {
+        console.error('Avatar analysis failed:', avatarError);
+        const fallbackResponse = userName 
+          ? `${userName}, Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~`
+          : "Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~";
+        return message.reply(fallbackResponse);
+      }
+}
+
+
+async function handleTextConversation(message, prompt, userName, userId, userInfo, conversationHistory) {
+    let userContext = userName ? `User ini bernama ${userName}. ` : '';
+    if (userInfo?.interactionCount > 1) {
+      userContext += `Sudah ${userInfo.interactionCount} kali berinteraksi dengan Ayumi. `;
+    }
+
+    let historyContext = "";
+    if (conversationHistory.length > 0) {
+      historyContext = "\n\nRIWAYAT PERCAKAPAN TERAKHIR:\n";
+      conversationHistory.forEach((msg) => {
+        historyContext += `${msg.author}: \"${msg.content}\"\n`;
+      });
+    }
+
+    let personalHistoryContext = "";
+    if (userInfo?.conversationHistory?.length > 0) {
+      const recentHistory = userInfo.conversationHistory.slice(-6);
+      personalHistoryContext = "\n\nRIWAYAT PERCAKAPAN DENGAN USER INI:\n";
+      recentHistory.forEach((msg) => {
+        const speaker = msg.type === "user" ? userName || "User" : "Ayumi";
+        personalHistoryContext += `${speaker}: \"${msg.content.substring(0, 150)}${msg.content.length > 150 ? '...' : ''}\"\n`;
+      });
+    }
+
+    let replyContext = "";
+    if (message.reference && message.reference.messageId) {
+      try {
+        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+        if (referencedMessage) {
+          const replyAuthor = referencedMessage.author.id === message.client.user.id ? 'Ayumi' :
+                             (referencedMessage.member?.nickname || referencedMessage.author.username);
+          replyContext = `\n\nUser sedang reply ke pesan: \"${referencedMessage.content.substring(0, 100)}\" dari ${replyAuthor}\n`;
+        }
+      } catch (err) {
+        console.error("Error fetching referenced message:", err);
+      }
+    }
+
+    const fullPrompt = `${AYUMI_SYSTEM_PROMPT}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: \"${prompt}\"\n\nRespond as Ayumi:`;
+    const result = await textModel.generateContent(fullPrompt);
+    let reply = result.response.text();
+
+    if (reply.length > 2000) {
+      reply = reply.substring(0, 1950) + "...\n\n*Ayumi terlalu excited sampai kecepetan ngomong~ Message terlalu panjang darling!*";
+    }
+
+    await message.reply(reply);
+    updateConversationHistory(userId, prompt, reply);
+
+    // Random reaction
+    if (Math.random() < 0.1) {
+      setTimeout(() => {
+        const reactions = ['💕', '🥰', '😊', '✨', '💖'];
+        message.react(reactions[Math.floor(Math.random() * reactions.length)]);
+      }, 1000);
+    }
+}
 
 // === Main Command Handler ===
 async function handleAyumiCommand(message) {
@@ -290,143 +410,19 @@ async function handleAyumiCommand(message) {
       attachment.contentType && attachment.contentType.startsWith('image/')
     );
 
-    // Handle image generation
     if (detectImageGeneration(prompt)) {
-      const generatingMessage = await message.reply(
-        userName 
-          ? `${userName}, Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~`
-          : "Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~"
-      );
-
-      try {
-        const imageResult = await generateImage(prompt, userName);
-        
-        if (imageResult.success && imageResult.imageData) {
-          const imageBuffer = Buffer.from(imageResult.imageData, 'base64');
-          const extension = imageResult.mimeType.includes('png') ? 'png' : 'jpg';
-          const fileName = `ayumi_generated_${Date.now()}.${extension}`;
-          
-          const successResponse = userName
-            ? `${userName}, nih gambar yang Ayumi buatin! Gimana, sesuai ekspektasi gak?`
-            : "Nih gambar yang Ayumi buatin! Gimana, sesuai ekspektasi gak?";
-          
-          await message.channel.send({
-            content: successResponse,
-            files: [{ attachment: imageBuffer, name: fileName }]
-          });
-          
-          await generatingMessage.delete();
-          updateConversationHistory(userId, prompt, successResponse);
-          return;
-        }
-      } catch (imageGenError) {
-        console.error('Image generation failed:', imageGenError);
-        
-        try {
-          await generatingMessage.delete();
-        } catch (e) {}
-        
-        const fallbackResponse = userName 
-          ? `${userName}, maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~`
-          : "Maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~";
-        return message.reply(fallbackResponse);
-      }
+      return await handleImageGeneration(message, prompt, userName, userId);
     }
 
-    // Handle image analysis
     if (imageAttachment) {
-      try {
-        const imageAnalysis = await analyzeImage(imageAttachment.url, userName, prompt, false);
-        await message.reply(imageAnalysis);
-        updateConversationHistory(userId, `[Mengirim gambar] ${prompt}`, imageAnalysis);
-        return;
-      } catch (imageError) {
-        console.error('Image analysis failed:', imageError);
-        const fallbackResponse = userName 
-          ? `${userName}, Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~`
-          : "Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~";
-        return message.reply(fallbackResponse);
-      }
+        return await handleImageAnalysis(message, prompt, userName, userId, imageAttachment);
     }
 
-    // Handle avatar analysis
     if (detectAvatarQuestions(prompt)) {
-      const avatarURL = message.author.displayAvatarURL({ 
-        format: 'png', 
-        size: 512,
-        dynamic: true 
-      });
-      
-      try {
-        const avatarAnalysis = await analyzeImage(avatarURL, userName, prompt, true);
-        await message.reply(avatarAnalysis);
-        updateConversationHistory(userId, prompt, avatarAnalysis);
-        return;
-      } catch (avatarError) {
-        console.error('Avatar analysis failed:', avatarError);
-        const fallbackResponse = userName 
-          ? `${userName}, Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~`
-          : "Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~";
-        return message.reply(fallbackResponse);
-      }
+        return await handleAvatarAnalysis(message, prompt, userName, userId);
     }
 
-    // Handle regular text conversation
-    let userContext = userName ? `User ini bernama ${userName}. ` : '';
-    if (userInfo?.interactionCount > 1) {
-      userContext += `Sudah ${userInfo.interactionCount} kali berinteraksi dengan Ayumi. `;
-    }
-
-    let historyContext = "";
-    if (conversationHistory.length > 0) {
-      historyContext = "\n\nRIWAYAT PERCAKAPAN TERAKHIR:\n";
-      conversationHistory.forEach((msg) => {
-        historyContext += `${msg.author}: "${msg.content}"\n`;
-      });
-    }
-
-    let personalHistoryContext = "";
-    if (userInfo?.conversationHistory?.length > 0) {
-      const recentHistory = userInfo.conversationHistory.slice(-6);
-      personalHistoryContext = "\n\nRIWAYAT PERCAKAPAN DENGAN USER INI:\n";
-      recentHistory.forEach((msg) => {
-        const speaker = msg.type === "user" ? userName || "User" : "Ayumi";
-        personalHistoryContext += `${speaker}: "${msg.content.substring(0, 150)}${msg.content.length > 150 ? '...' : ''}"\n`;
-      });
-    }
-
-    let replyContext = "";
-    if (message.reference && message.reference.messageId) {
-      try {
-        const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-        if (referencedMessage) {
-          const replyAuthor = referencedMessage.author.id === message.client.user.id ? 'Ayumi' : 
-                             (referencedMessage.member?.nickname || referencedMessage.author.username);
-          replyContext = `\n\nUser sedang reply ke pesan: "${referencedMessage.content.substring(0, 100)}" dari ${replyAuthor}\n`;
-        }
-      } catch (err) {
-        console.error("Error fetching referenced message:", err);
-      }
-    }
-
-    const fullPrompt = `${AYUMI_SYSTEM_PROMPT}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: "${prompt}"\n\nRespond as Ayumi:`;
-    const result = await textModel.generateContent(fullPrompt);
-    let reply = result.response.text();
-
-    if (reply.length > 2000) {
-      reply = reply.substring(0, 1950) + "...\n\n*Ayumi terlalu excited sampai kecepetan ngomong~ Message terlalu panjang darling!*";
-    }
-
-    await message.reply(reply);
-    updateConversationHistory(userId, prompt, reply);
-
-    // Random reaction
-    if (Math.random() < 0.1) {
-      setTimeout(() => {
-        const reactions = ['💕', '🥰', '😊', '✨', '💖'];
-        message.react(reactions[Math.floor(Math.random() * reactions.length)]);
-      }, 1000);
-    }
+    return await handleTextConversation(message, prompt, userName, userId, userInfo, conversationHistory);
 
   } catch (err) {
     console.error("Gemini API error:", err.message);
