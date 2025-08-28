@@ -1,32 +1,7 @@
-# 🌸 Yuyuko Bot - Japanese Immersion Tracker with Ayumi AI
-
+# 🌸 Yuyuko Bot - Japanese Immersion Tracker
 Yuyuko is a Discord bot specifically designed for Japanese language learners to track their immersion activities. It features Ayumi, a friendly AI assistant, along with comprehensive logging for various media types with automatic metadata fetching, rich statistics, and community features.
 
 ## 🌟 Key Features
-
-### 🤖 Ayumi AI Assistant
-Yuyuko includes Ayumi, a friendly and intelligent AI assistant with a distinct personality:
-- **Santai, ramah, dan sedikit jahil** - Conversational style that's relaxed and friendly with occasional playful teasing
-- **Context-aware** - Remembers previous conversations and user preferences
-- **Multilingual support** - Can communicate in both Indonesian and English with occasional Japanese phrases
-- **Image capabilities** - Can analyze images, view user avatars, and generate new images
-- **Personalized interactions** - Remembers user names and interaction history
-- **Rich personality** - Uses expressive language with occasional emojis and Japanese expressions like "ganbatte", "daijoubu", and "sugoi~"
-
-**Ayumi's Capabilities:**
-- **General conversation** - Chat about any topic with a friendly and engaging tone
-- **Image analysis** - Describe and analyze any images sent by users
-- **Avatar viewing** - View and comment on user profile pictures
-- **Image generation** - Create images based on user requests
-- **Immersion tracking assistance** - Help with logging and tracking immersion activities
-- **Learning support** - Provide assistance with Japanese language learning
-- **Entertainment** - Engage in fun conversations and provide entertainment
-
-**How to interact with Ayumi:**
-- Mention the bot with `@Yuyuko Bot [your message]`
-- Use the command `a!ayumi [your message]`
-- Send images for analysis
-- Request image generation with phrases like "buatkan gambar" or "generate gambar"
 
 ### 📚 Immersion Tracking
 Track your Japanese learning progress across multiple media types:
@@ -200,15 +175,7 @@ Different media types have different point values:
 - Manga/Book: 0.5 points per page
 - Anime: 10 points per episode
 - Listening/Reading Time: 0.5 points per minute
-
-### Role System
-Automatic role assignment based on points:
-- Level 1: 0-999 points
-- Level 2: 1,000-4,999 points
-- Level 3: 5,000-19,999 points
-- Level 4: 20,000-99,999 points
-- Level 5: 100,000+ points
-
+- etc
 ## 🔐 Required Permissions
 
 The bot requires the following Discord permissions:
