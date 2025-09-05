@@ -1,3 +1,9 @@
+/**
+ * Leaderboard command
+ * Displays immersion leaderboard based on points
+ * @module commands/leaderboard
+ */
+
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const db = require("../firebase/firestore");
 
@@ -32,7 +38,6 @@ const timestampLabelMap = {
   all_time: "All-time"
 };
 
-
 // Unit map for media types (from stat.js)
 const unitMap = {
   visual_novel: "characters",
@@ -44,7 +49,11 @@ const unitMap = {
   reading: "characters",
 };
 
-// Function to get points multiplier (from stat.js)
+/**
+ * Get points multiplier for media type
+ * @param {string} mediaType - Media type
+ * @returns {number} Points multiplier
+ */
 function getPointsMultiplier(mediaType) {
   return pointsMultipliers[mediaType];
 }
@@ -82,7 +91,7 @@ module.exports = {
           { name: "Reading", value: "reading" }
         )
     )
-    // --- PERUBAHAN DIMULAI DI SINI ---
+    // --- CHANGES START HERE ---
     .addIntegerOption(option => 
         option
             .setName("month")
@@ -110,23 +119,28 @@ module.exports = {
             .setRequired(false)
             .setMinValue(2020) // Set a reasonable minimum year
     ),
-    // --- PERUBAHAN BERAKHIR DI SINI ---
+    // --- CHANGES END HERE ---
 
+  /**
+   * Execute the leaderboard command
+   * @param {Object} interaction - Discord interaction object
+   * @returns {Promise<void>}
+   */
   async execute(interaction) {
     await interaction.deferReply();
 
     const timestampFilter = interaction.options.getString("timestamp");
     const mediaTypeFilter = interaction.options.getString("media_type");
-    // --- PERUBAHAN DIMULAI DI SINI ---
+    // --- UPDATED CHANGES START HERE ---
     const specifiedMonth = interaction.options.getInteger("month"); // Can be null
     const specifiedYear = interaction.options.getInteger("year"); // Can be null
-    // --- PERUBAHAN BERAKHIR DI SINI ---
+    // --- UPDATED CHANGES END HERE ---
 
     if (!timestampFilter || !mediaTypeFilter) {
         return await interaction.editReply("Please select both a time period and a media type for the leaderboard.");
     }
     
-    // --- LOGIKA TANGGAL YANG DIPERBARUI ---
+    // --- UPDATED DATE LOGIC ---
     let startDate = null;
     let endDate = null;
     const now = new Date();
@@ -263,13 +277,14 @@ module.exports = {
       let descriptionContent = "";
       const topCount = Math.min(sortedLeaderboard.length, 10);
 
-      for (let i = 0; i < topCount; i++) {
-        const entry = sortedLeaderboard[i];
+      for (let entryIndex = 0; entryIndex < topCount; entryIndex++) {
+        const entry = sortedLeaderboard[entryIndex];
         let amountString = "";
         if (entry.unit && mediaTypeFilter !== "all") {
           amountString = ` | **${entry.amount.toLocaleString()}** ${entry.unit}`;
         }
-        descriptionContent += `**#${i + 1}.** **${entry.displayName}**: ${entry.points.toFixed(2)} Pts${amountString}\n`;
+        descriptionContent += `**#${entryIndex + 1}.** **${entry.displayName}**: ${entry.points.toFixed(2)} Pts${amountString}
+`;
       }
       embed.setDescription(descriptionContent);
 

@@ -1,15 +1,21 @@
 /**
- * AniList API utility functions for fetching anime and manga information
- * @module utils/anilistAPI
+ * AniList Service Module
+ * Handles AniList API interactions for the immersion tracker
+ * @module services/anilistService
  */
 
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const { asyncHandler, logError, APIError } = require("../utils/errorHandler");
 
 /**
- * Get media information from AniList by title
+ * Get media info from AniList by title
  * @param {string} title - Media title to search for
- * @param {string} type - Media type ('ANIME' or 'MANGA')
- * @returns {Promise<Object|null>} Media information or null if not found
+ * @param {string} type - Media type (ANIME or MANGA)
+ * @returns {Promise<Object|null>} - Media info or null if not found
+ * @property {string} title - Media title
+ * @property {string} url - Media URL
+ * @property {string} image - Media image URL
+ * @property {number} id - Media ID
  */
 async function getAniListInfo(title, type = 'ANIME') {
   try {
@@ -66,7 +72,7 @@ async function getAniListInfo(title, type = 'ANIME') {
       return null;
     }
   } catch (err) {
-    console.error("Failed to fetch data from AniList:", err.message);
+    logError(err, 'getAniListInfo', { title, type });
     return null;
   }
 }
@@ -74,9 +80,11 @@ async function getAniListInfo(title, type = 'ANIME') {
 /**
  * Search for media on AniList
  * @param {string} searchTerm - Search term
- * @param {string} type - Media type ('ANIME' or 'MANGA')
+ * @param {string} type - Media type (ANIME or MANGA)
  * @param {number} limit - Maximum number of results
- * @returns {Promise<Array>} Array of search results
+ * @returns {Promise<Array>} - Array of search results
+ * @property {string} name - Display name of the media
+ * @property {string} value - Value for autocomplete (title|id)
  */
 async function searchAniList(searchTerm, type = 'ANIME', limit = 25) {
   try {
@@ -136,16 +144,20 @@ async function searchAniList(searchTerm, type = 'ANIME', limit = 25) {
       return [];
     }
   } catch (err) {
-    console.error("Failed to search AniList:", err.message);
+    logError(err, 'searchAniList', { searchTerm, type, limit });
     return [];
   }
 }
 
 /**
- * Get media information from AniList by ID
+ * Get media info from AniList by ID
  * @param {number|string} id - AniList media ID
- * @param {string} type - Media type ('ANIME' or 'MANGA')
- * @returns {Promise<Object|null>} Media information or null if not found
+ * @param {string} type - Media type (ANIME or MANGA)
+ * @returns {Promise<Object|null>} - Media info or null if not found
+ * @property {string} title - Media title
+ * @property {string} url - Media URL
+ * @property {string} image - Media image URL
+ * @property {number} id - Media ID
  */
 async function getAniListInfoById(id, type = 'ANIME') {
   try {
@@ -202,16 +214,20 @@ async function getAniListInfoById(id, type = 'ANIME') {
       return null;
     }
   } catch (err) {
-    console.error("Failed to fetch data from AniList by ID:", err.message);
+    logError(err, 'getAniListInfoById', { id, type });
     return null;
-  }
+ }
 }
 
 /**
- * Get media information based on media type
+ * Get media info based on media type
  * @param {string} title - Media title
  * @param {string} mediaType - Media type (anime, manga, visual_novel, book, reading)
- * @returns {Promise<Object|null>} Media information or null if not found
+ * @returns {Promise<Object|null>} - Media info or null if not found
+ * @property {string} title - Media title
+ * @property {string} url - Media URL
+ * @property {string} image - Media image URL
+ * @property {number} id - Media ID
  */
 async function getMediaInfo(title, mediaType) {
   let anilistType;

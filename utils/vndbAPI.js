@@ -1,9 +1,18 @@
 const https = require('https');
+const { asyncHandler, logError, APIError, NetworkError } = require("./errorHandler");
 
 /**
  * Search for Visual Novel information from VNDB API
  * @param {string} title - The title to search for
  * @returns {Promise<Object|null>} VN info object or null if not found
+ * @property {string} title - Media title
+ * @property {string} image - Media image URL
+ * @property {string} url - Media URL
+ * @property {string} description - Media description
+ * @property {string} released - Release date
+ * @property {number} length - Length rating
+ * @property {string} developer - Developer name
+ * @property {Array} aliases - Alternative titles
  */
 async function getVNInfo(title) {
   if (!title || title.trim() === "" || title === "-") {
@@ -37,7 +46,7 @@ async function getVNInfo(title) {
 
     return null;
   } catch (error) {
-    console.error("❌ Error fetching VN info from VNDB:", error);
+    logError(error, 'getVNInfo', { title });
     return null;
   }
 }
@@ -77,25 +86,30 @@ function makeVNDBRequest(endpoint, query) {
             const jsonData = JSON.parse(data);
             resolve(jsonData);
           } else {
-            console.error(`VNDB API Error: ${res.statusCode} - ${data}`);
-            reject(new Error(`VNDB API returned status ${res.statusCode}`));
+            logError(new APIError(`VNDB API returned status ${res.statusCode}`), 'makeVNDBRequest', {
+              statusCode: res.statusCode,
+              data
+            });
+            reject(new APIError(`VNDB API returned status ${res.statusCode}`));
           }
         } catch (parseError) {
-          console.error("Error parsing VNDB response:", parseError);
+          logError(parseError, 'makeVNDBRequest-parse', { data });
           reject(parseError);
         }
       });
     });
 
     req.on('error', (error) => {
-      console.error('VNDB API Request Error:', error);
-      reject(error);
+      logError(error, 'makeVNDBRequest-network');
+      reject(new NetworkError('Failed to connect to VNDB API'));
     });
 
     // Set timeout for the request
     req.setTimeout(10000, () => {
       req.destroy();
-      reject(new Error('VNDB API request timeout'));
+      const timeoutError = new NetworkError('VNDB API request timeout');
+      logError(timeoutError, 'makeVNDBRequest-timeout');
+      reject(timeoutError);
     });
 
     req.write(postData);
@@ -113,7 +127,7 @@ async function getVNCoverImage(title) {
     const vnInfo = await getVNInfo(title);
     return vnInfo?.image || null;
   } catch (error) {
-    console.error("Error getting VN cover image:", error);
+    logError(error, 'getVNCoverImage', { title });
     return null;
   }
 }
@@ -123,6 +137,13 @@ async function getVNCoverImage(title) {
  * @param {string} searchTerm - Search term
  * @param {number} limit - Maximum number of results (default: 10)
  * @returns {Promise<Array>} Array of VN objects for autocomplete
+ * @property {string} name - Display name of the media
+ * @property {string} value - Value for autocomplete (title|id)
+ * @property {number} id - Media ID
+ * @property {string} title - Media title
+ * @property {string} released - Release date
+ * @property {number} length - Length rating
+ * @property {Array} aliases - Alternative titles
  */
 async function searchVNs(searchTerm, limit = 10) {
   if (!searchTerm || searchTerm.trim() === "" || searchTerm.length < 2) {
@@ -166,7 +187,7 @@ async function searchVNs(searchTerm, limit = 10) {
 
     return [];
   } catch (error) {
-    console.error("❌ Error searching VNs from VNDB:", error);
+    logError(error, 'searchVNs', { searchTerm, limit });
     return [];
   }
 }
@@ -175,6 +196,15 @@ async function searchVNs(searchTerm, limit = 10) {
  * Get VN info by ID (for when user selects from autocomplete)
  * @param {string} vnId - VNDB ID (e.g., "v27448")
  * @returns {Promise<Object|null>} VN info object or null if not found
+ * @property {number} id - Media ID
+ * @property {string} title - Media title
+ * @property {string} image - Media image URL
+ * @property {string} url - Media URL
+ * @property {string} description - Media description
+ * @property {string} released - Release date
+ * @property {number} length - Length rating
+ * @property {string} developer - Developer name
+ * @property {Array} aliases - Alternative titles
  */
 async function getVNInfoById(vnId) {
   if (!vnId) {
@@ -210,7 +240,7 @@ async function getVNInfoById(vnId) {
 
     return null;
   } catch (error) {
-    console.error("❌ Error fetching VN info by ID from VNDB:", error);
+    logError(error, 'getVNInfoById', { vnId });
     return null;
   }
 }

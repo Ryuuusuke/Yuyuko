@@ -1,10 +1,16 @@
-const { Client, Collection, GatewayIntentBits, REST, Routes } = require("discord.js");
-const { DISCORD_TOKEN, CLIENT_ID } = require("./environment");
+/**
+ * Main entry point for the Yuyuko Discord bot
+ * Initializes the Discord client and sets up command handling
+ * @module index
+ */
+
+const { Client, Collection, GatewayIntentBits } = require("discord.js");
+const { DISCORD_TOKEN } = require("./environment");
 const fs = require("fs");
 const path = require("path");
 const handleAyumiCommand = require('./commands/geminiReply'); // Updated import name
 const logCommand = require('./commands/log.js');
-const { checkRank, trackUserQuizStart } = require("./ranked/checkRank");
+const { asyncHandler, logError } = require("./utils/errorHandler");
 
 const client = new Client({
     intents: [
@@ -20,96 +26,66 @@ const commandsPath = path.join(__dirname, 'commands');
 if (!fs.existsSync(commandsPath)) fs.mkdirSync(commandsPath, { recursive: true });
 
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-const validCommands = [];
 
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
     try {
         const command = require(filePath);
-        if (command?.data?.name && command?.execute) {
+        if (command?.data?.name && (command?.execute || command?.handleButton)) {
             client.commands.set(command.data.name, command);
-            validCommands.push(command);
         }
     } catch (error) {
         console.error(`Error loading command ${file}:`, error.message);
     }
 }
 
-async function deployCommandsToAllGuilds() {
-    const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
-    const commands = validCommands.map(cmd => cmd.data.toJSON());
-    if (!commands.length) return;
-
-    const guilds = client.guilds.cache;
-    for (const [guildId, guild] of guilds) {
-        try {
-            await rest.put(Routes.applicationGuildCommands(CLIENT_ID, guildId), { body: commands });
-            console.log(`✅ ${guild.name} (${guildId})`);
-        } catch (err) {
-            console.error(`${guild.name} (${guildId}) -> ERROR:`, err.message);
-        }
-    }
-}
-
-client.once("ready", async () => {
+client.once("ready", () => {
     console.log(`${client.user.tag} is now online`);
-    await deployCommandsToAllGuilds();
 });
 
-client.on("interactionCreate", async interaction => {
-    try {
-        if (interaction.isButton()) return await logCommand.handleButton(interaction);
-
-        const command = client.commands.get(interaction.commandName);
-        if (!command) return;
-
-        if (interaction.isAutocomplete() && command.autocomplete) {
-            return await command.autocomplete(interaction);
+client.on("interactionCreate", asyncHandler(async interaction => {
+    if (interaction.isButton()) {
+        // Route button interactions to the respective command's handler
+        const command = client.commands.get(interaction.message.interaction.commandName);
+        if (command && command.handleButton) {
+            return await command.handleButton(interaction);
         }
-
-        if (interaction.isChatInputCommand()) {
-            await command.execute(interaction);
+        // Fallback for older buttons that might not be linked to a command
+        if (interaction.customId.startsWith('log_') || interaction.customId.startsWith('media_') || interaction.customId.startsWith('delete_') || interaction.customId.startsWith('back_to_selection_')) {
+            return await logCommand.handleButton(interaction);
         }
-    } catch (error) {
-        console.error('Error in interaction:', error.message);
-        const reply = {
-            content: 'Terjadi error saat menjalankan perintah.',
-            ephemeral: true
-        };
-        try {
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp(reply);
-            } else {
-                await interaction.reply(reply);
-            }
-        } catch (err) {
-            console.error('Error replying to interaction:', err.message);
-        }
+        return;
     }
-});
 
-client.on("messageCreate", async (message) => {
-    try {
-        // Check for a!ayumi command (case insensitive)
-        if (message.content.toLowerCase().startsWith('a!ayumi')) {
-            await handleAyumiCommand(message);
-            return;
-        }
-        
-        // Other existing handlers
-        if (message.content.startsWith("k!quiz")) trackUserQuizStart(message);
-        if (message.author.id === "251239170058616833") await checkRank(message);
-    } catch (error) {
-        console.error('Error in messageCreate:', error.message);
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
+
+    if (interaction.isAutocomplete() && command.autocomplete) {
+        return await command.autocomplete(interaction);
     }
-});
+
+    if (interaction.isChatInputCommand() && command.execute) {
+        await command.execute(interaction);
+    }
+}));
+
+client.on("messageCreate", asyncHandler(async (message) => {
+    // Check for a!ayumi command (case insensitive)
+    if (message.content.toLowerCase().startsWith('a!ayumi')) {
+        await handleAyumiCommand(message);
+        return;
+    }
+    
+    // Other existing handlers can be added here
+}));
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    logError(new Error(reason), 'unhandledRejection', { promise });
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+    logError(error, 'uncaughtException');
+    process.exit(1);
 });
 
 client.login(DISCORD_TOKEN).catch(error => {

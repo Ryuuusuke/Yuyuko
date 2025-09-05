@@ -1,15 +1,30 @@
+/**
+ * Streak utility functions for calculating and updating user immersion streaks
+ * @module utils/streak
+ */
+
 const db = require("../firebase/firestore");
 const { Timestamp } = require("firebase-admin/firestore");
+const { asyncHandler } = require("./errorHandler");
 
-// Convert ke YYYY-MM-DD agar mudah dibandingkan
+/**
+ * Convert a date to YYYY-MM-DD string format for easy comparison
+ * @param {Date} date - Date to convert
+ * @returns {string} Date in YYYY-MM-DD format
+ */
 function toDateString(date) {
-  // Pastikan timezone konsisten dengan menggunakan local timezone
-  const d = new Date(date);
-  return d.getFullYear() + '-' + 
-         String(d.getMonth() + 1).padStart(2, '0') + '-' + 
-         String(d.getDate()).padStart(2, '0');
+  // Ensure timezone consistency by using local timezone
+  const dateObject = new Date(date);
+  return dateObject.getFullYear() + '-' +
+         String(dateObject.getMonth() + 1).padStart(2, '0') + '-' +
+         String(dateObject.getDate()).padStart(2, '0');
 }
 
+/**
+ * Get all dates when a user has logged immersion activities
+ * @param {string} userId - Discord user ID
+ * @returns {Promise<Array<string>>} Array of date strings in YYYY-MM-DD format
+ */
 async function getUserImmersionDates(userId) {
   const snapshot = await db.collection("users").doc(userId).collection("immersion_logs").get();
 
@@ -18,19 +33,19 @@ async function getUserImmersionDates(userId) {
   snapshot.forEach(doc => {
     const data = doc.data();
     
-    // Prioritas: gunakan timestamps.date (format YYYY-MM-DD) jika ada,
-    // jika tidak ada, gunakan timestamps.created dan convert ke date string
+    // Priority: use timestamps.date (format YYYY-MM-DD) if available,
+    // if not available, use timestamps.created and convert to date string
     let dateStr;
     
     if (data.timestamps?.date) {
-      // Sudah dalam format YYYY-MM-DD
+      // Already in YYYY-MM-DD format
       dateStr = data.timestamps.date;
     } else if (data.timestamps?.created) {
-      // Convert timestamp ke date string
+      // Convert timestamp to date string
       const dateObj = data.timestamps.created?.toDate?.() || data.timestamps.created;
       dateStr = toDateString(dateObj);
     } else {
-      // Fallback ke timestamp lama jika ada
+      // Fallback to old timestamp if available
       const dateObj = data.timestamp?.toDate?.() || data.timestamp;
       if (dateObj) {
         dateStr = toDateString(dateObj);
@@ -45,6 +60,13 @@ async function getUserImmersionDates(userId) {
   return Array.from(dateSet).sort(); // ascending
 }
 
+/**
+ * Calculate current and longest streaks from sorted dates
+ * @param {Array<string>} dates - Array of date strings in YYYY-MM-DD format, sorted ascending
+ * @returns {Object} Streak information
+ * @property {number} streak - Current streak count
+ * @property {number} longest - Longest streak count
+ */
 function calculateStreak(dates) {
   if (!dates || dates.length === 0) {
     return { streak: 0, longest: 0 };
@@ -54,57 +76,57 @@ function calculateStreak(dates) {
   let longestStreak = 0;
 
   const today = toDateString(new Date());
-  const yesterday = toDateString(new Date(Date.now() - 86400000)); // 1 hari sebelum
+  const yesterday = toDateString(new Date(Date.now() - 86400000)); // 1 day before
 
-  // Hitung current streak dari hari ini mundur
+  // Calculate current streak from today backwards
   let streakBroken = false;
   let expectedDate = today;
 
-  // Mulai dari tanggal terakhir dan mundur
-  for (let i = dates.length - 1; i >= 0; i--) {
-    const currentDate = dates[i];
+  // Start from the last date and go backwards
+  for (let dateIndex = dates.length - 1; dateIndex >= 0; dateIndex--) {
+    const currentDate = dates[dateIndex];
     
     if (currentDate === expectedDate) {
       currentStreak++;
-      // Pindah ke hari sebelumnya
+      // Move to the previous day
       const prevDay = new Date(expectedDate);
       prevDay.setDate(prevDay.getDate() - 1);
       expectedDate = toDateString(prevDay);
     } else if (currentDate < expectedDate) {
-      // Ada gap dalam streak
+      // There's a gap in the streak
       break;
     }
   }
 
-  // Jika tidak ada aktivitas hari ini tapi ada kemarin, streak masih berlanjut
+  // If there's no activity today but there was yesterday, the streak continues
   if (currentStreak === 0 && dates.includes(yesterday)) {
     expectedDate = yesterday;
-    for (let i = dates.length - 1; i >= 0; i--) {
-      const currentDate = dates[i];
+    for (let dateIndex = dates.length - 1; dateIndex >= 0; dateIndex--) {
+      const currentDate = dates[dateIndex];
       
       if (currentDate === expectedDate) {
         currentStreak++;
-        // Pindah ke hari sebelumnya
+        // Move to the previous day
         const prevDay = new Date(expectedDate);
         prevDay.setDate(prevDay.getDate() - 1);
         expectedDate = toDateString(prevDay);
       } else if (currentDate < expectedDate) {
-        // Ada gap dalam streak
+        // There's a gap in the streak
         break;
       }
     }
   }
 
-  // Hitung longest streak
+  // Calculate longest streak
   let tempStreak = 1;
   longestStreak = 1;
 
-  for (let i = 1; i < dates.length; i++) {
-    const prevDate = new Date(dates[i - 1]);
+  for (let dateIndex = 1; dateIndex < dates.length; dateIndex++) {
+    const prevDate = new Date(dates[dateIndex - 1]);
     prevDate.setDate(prevDate.getDate() + 1);
     const expectedNext = toDateString(prevDate);
 
-    if (dates[i] === expectedNext) {
+    if (dates[dateIndex] === expectedNext) {
       tempStreak++;
     } else {
       if (tempStreak > longestStreak) {
@@ -119,12 +141,12 @@ function calculateStreak(dates) {
     longestStreak = tempStreak;
   }
 
-  // Jika hanya ada satu hari, longest streak adalah 1
+  // If there's only one day, longest streak is 1
   if (dates.length === 1) {
     longestStreak = 1;
   }
 
-  // Jika current streak lebih besar dari longest, update longest
+  // If current streak is greater than longest, update longest
   if (currentStreak > longestStreak) {
     longestStreak = currentStreak;
   }
@@ -132,7 +154,11 @@ function calculateStreak(dates) {
   return { streak: currentStreak, longest: longestStreak };
 }
 
-// Fungsi tambahan untuk update streak di user stats (opsional)
+/**
+ * Update streak information in user stats for all media types
+ * @param {string} userId - Discord user ID
+ * @returns {Promise<Object>} Updated streak information
+ */
 async function updateUserStreak(userId) {
   const snapshot = await db.collection("users").doc(userId).collection("immersion_logs").get();
 
@@ -187,12 +213,26 @@ async function updateUserStreak(userId) {
   return updates.streaks;
 }
 
-
+/**
+ * Get user's overall immersion streak
+ * @param {string} userId - Discord user ID
+ * @returns {Promise<Object>} Streak information
+ * @property {number} streak - Current streak count
+ * @property {number} longest - Longest streak count
+ */
 async function getUserStreak(userId) {
   const dates = await getUserImmersionDates(userId);
   return calculateStreak(dates);
 }
 
+/**
+ * Get user's immersion streak for a specific media type
+ * @param {string} userId - Discord user ID
+ * @param {string} mediaType - Media type to get streak for
+ * @returns {Promise<Object>} Streak information
+ * @property {number} streak - Current streak count
+ * @property {number} longest - Longest streak count
+ */
 async function getUserStreakByMedia(userId, mediaType) {
   const snapshot = await db.collection("users").doc(userId).collection("immersion_logs")
     .where("activity.type", "==", mediaType)

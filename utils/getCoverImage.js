@@ -1,5 +1,17 @@
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+/**
+ * Utility function to fetch cover images from AniList API
+ * @module utils/getCoverImage
+ */
 
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+const { asyncHandler } = require("./errorHandler");
+
+/**
+ * Get cover image URL for a given media type and title from AniList
+ * @param {string} type - Media type ("anime" or "manga")
+ * @param {string} title - Media title to search for
+ * @returns {Promise<string|null>} Cover image URL or null if not found
+ */
 async function getCoverImageByType(type, title) {
   if (!title || !type) return null;
 
@@ -30,7 +42,7 @@ async function getCoverImageByType(type, title) {
     return null;
 
   } catch (err) {
-    console.error("Gagal fetch cover image:", err);
+    console.error("Failed to fetch cover image:", err);
   }
 
   return null;

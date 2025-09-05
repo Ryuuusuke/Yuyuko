@@ -1,3 +1,8 @@
+/**
+ * Generate heatmap image for user immersion statistics
+ * @module utils/generateHeatmapImage
+ */
+
 const { createCanvas } = require("canvas");
 
 // GitHub-style blues color palette (similar to Blues_r in matplotlib)
@@ -6,6 +11,12 @@ const colors = [
   "#39d353", "#57e86a", "#7ff081", "#a6f598", "#d1ffcd"
 ];
 
+/**
+ * Get color based on value intensity
+ * @param {number} value - Data value
+ * @param {number} max - Maximum value in dataset
+ * @returns {string} Hex color code
+ */
 function getColor(value, max) {
   if (value === 0 || max === 0) return colors[0];
   const normalizedValue = Math.log(value + 1) / Math.log(max + 1);
@@ -13,38 +24,52 @@ function getColor(value, max) {
   return colors[index];
 }
 
-//ISO 8601: Monday = 0, Sunday = 6 (sesuai dengan index array)
+/**
+ * Get day of week according to ISO 8601 standard (Monday = 0, Sunday = 6)
+ * @param {Date} date - Date object
+ * @returns {number} Day of week index (0-6)
+ */
 function getDayOfWeek(date) {
   const day = date.getDay();
-  // Konversi: Sunday(0) -> 6, Monday(1) -> 0, ..., Saturday(6) -> 5
+  // Convert: Sunday(0) -> 6, Monday(1) -> 0, ..., Saturday(6) -> 5
   return day === 0 ? 6 : day - 1;
 }
 
-//ISO 8601: Minggu pertama mengandung hari Kamis pertama
+/**
+ * Get ISO week number (first week contains the first Thursday)
+ * @param {Date} date - Date object
+ * @returns {number} Week number
+ */
 function getISOWeek(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  const dateObject = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = dateObject.getUTCDay() || 7;
+  dateObject.setUTCDate(dateObject.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(dateObject.getUTCFullYear(), 0, 1));
+  return Math.ceil((((dateObject - yearStart) / 86400000) + 1) / 7);
 }
 
+/**
+ * Generate heatmap image from daily immersion totals
+ * @param {Object} dailyTotals - Object with date keys and point values
+ * @param {number|null} year - Year to generate heatmap for (defaults to current year)
+ * @returns {Promise<Buffer>} PNG image buffer
+ */
 async function generateHeatmapImage(dailyTotals, year = null) {
-  const cellSize = 20;
-  const cellPadding = 2;
-  const marginLeft = 60;
-  const marginTop = 80;
-  const marginBottom = 100;
-  const marginRight = 60;
+  const CELL_SIZE = 20;
+  const CELL_PADDING = 2;
+  const MARGIN_LEFT = 60;
+  const MARGIN_TOP = 80;
+  const MARGIN_BOTTOM = 100;
+  const MARGIN_RIGHT = 60;
 
   const currentYear = year || new Date().getFullYear();
-  const weeks = 53;
-  const days = 7;
+  const WEEKS = 53;
+  const DAYS = 7;
 
-  const chartWidth = weeks * (cellSize + cellPadding);
-  const chartHeight = days * (cellSize + cellPadding);
-  const canvasWidth = chartWidth + marginLeft + marginRight;
-  const canvasHeight = chartHeight + marginTop + marginBottom;
+  const chartWidth = WEEKS * (CELL_SIZE + CELL_PADDING);
+  const chartHeight = DAYS * (CELL_SIZE + CELL_PADDING);
+  const canvasWidth = chartWidth + MARGIN_LEFT + MARGIN_RIGHT;
+  const canvasHeight = chartHeight + MARGIN_TOP + MARGIN_BOTTOM;
 
   const canvas = createCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d");
@@ -62,46 +87,46 @@ async function generateHeatmapImage(dailyTotals, year = null) {
   ctx.textAlign = "center";
 
   // Draw month labels
-  for (let month = 0; month < 12; month++) {
-    const monthDate = new Date(currentYear, month, 1);
+  for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+    const monthDate = new Date(currentYear, monthIndex, 1);
     const weekOfMonth = getISOWeek(monthDate) - 1;
-    const x = marginLeft + weekOfMonth * (cellSize + cellPadding) + cellSize / 2;
-    if (x > marginLeft && x < canvasWidth - marginRight) {
-      ctx.fillText(monthNames[month], x, marginTop - 10);
+    const x = MARGIN_LEFT + weekOfMonth * (CELL_SIZE + CELL_PADDING) + CELL_SIZE / 2;
+    if (x > MARGIN_LEFT && x < canvasWidth - MARGIN_RIGHT) {
+      ctx.fillText(monthNames[monthIndex], x, MARGIN_TOP - 10);
     }
   }
 
-  // Day labels (Senin sampai Minggu, sesuai dengan index array)
+  // Day labels (Monday to Sunday, according to array index)
   const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.font = "13px 'Segoe UI'";
 
-  for (let i = 0; i < dayLabels.length; i++) {
-    const y = marginTop + i * (cellSize + cellPadding) + cellSize / 2;
-    ctx.fillText(dayLabels[i], marginLeft - 10, y);
+  for (let dayIndex = 0; dayIndex < dayLabels.length; dayIndex++) {
+    const y = MARGIN_TOP + dayIndex * (CELL_SIZE + CELL_PADDING) + CELL_SIZE / 2;
+    ctx.fillText(dayLabels[dayIndex], MARGIN_LEFT - 10, y);
   }
 
   // Draw heatmap grid
   const startDate = new Date(currentYear, 0, 1);
   const endDate = new Date(currentYear, 11, 31);
 
-  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    // Pastikan format tanggal konsisten (local date, bukan UTC)
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
+  for (let currentDate = new Date(startDate); currentDate <= endDate; currentDate.setDate(currentDate.getDate() + 1)) {
+    // Ensure consistent date format (local date, not UTC)
+    const year = currentDate.getFullYear();
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const day = String(currentDate.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
     
     const value = dailyTotals[dateStr] || 0;
-    const week = getISOWeek(d) - 1;
-    const dayOfWeek = getDayOfWeek(d);
-    const x = marginLeft + week * (cellSize + cellPadding);
-    const y = marginTop + dayOfWeek * (cellSize + cellPadding);
+    const week = getISOWeek(currentDate) - 1;
+    const dayOfWeek = getDayOfWeek(currentDate);
+    const x = MARGIN_LEFT + week * (CELL_SIZE + CELL_PADDING);
+    const y = MARGIN_TOP + dayOfWeek * (CELL_SIZE + CELL_PADDING);
     ctx.fillStyle = getColor(value, maxVal);
-    ctx.fillRect(x, y, cellSize, cellSize);
+    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
     ctx.strokeStyle = "#2c2c2d";
-    ctx.strokeRect(x, y, cellSize, cellSize);
+    ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
   }
 
   // Highlight today
@@ -110,33 +135,33 @@ async function generateHeatmapImage(dailyTotals, year = null) {
   if (today.getFullYear() === currentYear) {
     const currentWeek = getISOWeek(today) - 1;
     const currentDay = getDayOfWeek(today);
-    const x = marginLeft + currentWeek * (cellSize + cellPadding);
-    const y = marginTop + currentDay * (cellSize + cellPadding);
+    const x = MARGIN_LEFT + currentWeek * (CELL_SIZE + CELL_PADDING);
+    const y = MARGIN_TOP + currentDay * (CELL_SIZE + CELL_PADDING);
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
-    ctx.strokeRect(x - 1, y - 1, cellSize + 2, cellSize + 2);
+    ctx.strokeRect(x - 1, y - 1, CELL_SIZE + 2, CELL_SIZE + 2);
   }
 
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 18px Arial";
   ctx.textAlign = "left";
-  ctx.fillText(`Immersion Heatmap - ${currentYear}`, marginLeft, 30);
+  ctx.fillText(`Immersion Heatmap - ${currentYear}`, MARGIN_LEFT, 30);
 
-  const legendY = chartHeight + marginTop + 40;
-  const legendStartX = marginLeft;
+  const legendY = chartHeight + MARGIN_TOP + 40;
+  const legendStartX = MARGIN_LEFT;
   ctx.font = "12px Arial";
   ctx.fillText("Less", legendStartX, legendY + 20);
 
-  for (let i = 0; i < colors.length; i++) {
-    const legendX = legendStartX + 40 + i * (cellSize + 2);
-    ctx.fillStyle = colors[i];
-    ctx.fillRect(legendX, legendY, cellSize, cellSize);
+  for (let colorIndex = 0; colorIndex < colors.length; colorIndex++) {
+    const legendX = legendStartX + 40 + colorIndex * (CELL_SIZE + 2);
+    ctx.fillStyle = colors[colorIndex];
+    ctx.fillRect(legendX, legendY, CELL_SIZE, CELL_SIZE);
     ctx.strokeStyle = "#2c2c2d";
-    ctx.strokeRect(legendX, legendY, cellSize, cellSize);
+    ctx.strokeRect(legendX, legendY, CELL_SIZE, CELL_SIZE);
   }
 
   ctx.fillStyle = "#ffffff";
-  ctx.fillText("More", legendStartX + 40 + colors.length * (cellSize + 2) + 10, legendY + 20);
+  ctx.fillText("More", legendStartX + 40 + colors.length * (CELL_SIZE + 2) + 10, legendY + 20);
 
   // Stats
   const totalDays = Object.keys(dailyTotals).filter(date => dailyTotals[date] > 0).length;
@@ -145,7 +170,7 @@ async function generateHeatmapImage(dailyTotals, year = null) {
 
   ctx.font = "12px Arial";
   ctx.textAlign = "right";
-  const statsX = canvasWidth - marginRight;
+  const statsX = canvasWidth - MARGIN_RIGHT;
   ctx.fillText(`${totalDays} days active`, statsX, legendY);
   ctx.fillText(`${totalPoints.toLocaleString()} total points`, statsX, legendY + 15);
   ctx.fillText(`${avgPoints} avg points/day`, statsX, legendY + 30);

@@ -1,5 +1,7 @@
 package main
 
+// TODO: Implement centralized error handling mechanism
+
 import (
 	"fmt"
 	"log"
@@ -20,15 +22,15 @@ func HandleClearCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	args := strings.Fields(m.Content)
 	if len(args) < 3 {
-		s.ChannelMessageSend(m.ChannelID, "Format salah. Gunakan: `a!clear <user_id> <pesan>`")
+		s.ChannelMessageSend(m.ChannelID, "Wrong format. Use: `a!clear <user_id> <message>`")
 		return
 	}
 
-	// ✅ Cek apakah pengirim punya role yang diizinkan
+	// ✅ Check if sender has allowed role
 	hasAccess := false
 	member, err := s.GuildMember(m.GuildID, m.Author.ID)
 	if err != nil {
-		log.Printf("Gagal mendapatkan data member: %v", err)
+		log.Printf("Failed to get member data: %v", err)
 		return
 	}
 	for _, r := range member.Roles {
@@ -40,30 +42,30 @@ func HandleClearCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 	if !hasAccess {
-		s.ChannelMessageSend(m.ChannelID, "Kamu tidak punya izin untuk menggunakan perintah ini.")
+		s.ChannelMessageSend(m.ChannelID, "You don't have permission to use this command.")
 		return
 	}
 
-	//Ambil user ID & pesan custom
+	//Get user ID & custom message
 	targetUserID := args[1]
 	customMessage := strings.Join(args[2:], " ")
 
-	//Ambil data user target
+	//Get target user data
 	targetMember, err := s.GuildMember(m.GuildID, targetUserID)
 	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, "Gagal menemukan user.")
-		log.Printf("Gagal menemukan user %s: %v", targetUserID, err)
+		s.ChannelMessageSend(m.ChannelID, "Failed to find user.")
+		log.Printf("Failed to find user %s: %v", targetUserID, err)
 		return
 	}
 
-	//Hapus semua role quiz
+	//Remove all quiz roles
 	removedRoles := []string{}
 	for _, quiz := range Quizzes {
 		for _, r := range targetMember.Roles {
 			if r == quiz.RoleID {
 				err := s.GuildMemberRoleRemove(m.GuildID, targetUserID, quiz.RoleID)
 				if err != nil {
-					log.Printf("Gagal menghapus role %s: %v", quiz.RoleID, err)
+					log.Printf("Failed to remove role %s: %v", quiz.RoleID, err)
 				} else {
 					removedRoles = append(removedRoles, quiz.Label)
 				}
@@ -71,23 +73,23 @@ func HandleClearCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
-	//Kirim DM ke user
+	//Send DM to user
 	channel, err := s.UserChannelCreate(targetUserID)
 	if err == nil {
-		dm := fmt.Sprintf("Halo! Role quiz kamu telah dicabut oleh moderator.\n\n**Pesan dari moderator:**\n%s", customMessage)
+		dm := fmt.Sprintf("Hello! Your quiz roles have been removed by a moderator.\n\n**Message from moderator:**\n%s", customMessage)
 		_, err = s.ChannelMessageSend(channel.ID, dm)
 		if err != nil {
-			log.Printf("Gagal kirim DM ke %s: %v", targetUserID, err)
+			log.Printf("Failed to send DM to %s: %v", targetUserID, err)
 		}
 	} else {
-		log.Printf("Gagal buka DM ke %s: %v", targetUserID, err)
+		log.Printf("Failed to open DM to %s: %v", targetUserID, err)
 	}
 
-	msg := fmt.Sprintf("Role quiz <%s> berhasil dicabut.\n DM terkirim dengan pesan:\n> %s", targetUserID, customMessage)
+	msg := fmt.Sprintf("Quiz roles for <%s> have been removed.\n DM sent with message:\n> %s", targetUserID, customMessage)
 	if len(removedRoles) > 0 {
-		msg += fmt.Sprintf("\nRole yang dihapus: %s", strings.Join(removedRoles, ", "))
+		msg += fmt.Sprintf("\nRemoved roles: %s", strings.Join(removedRoles, ", "))
 	} else {
-		msg += "\n Tidak ada role quiz yang ditemukan."
+		msg += "\n No quiz roles found."
 	}
 
 	s.ChannelMessageSend(m.ChannelID, msg)

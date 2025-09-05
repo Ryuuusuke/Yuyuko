@@ -1,3 +1,9 @@
+/**
+ * Statistics command
+ * Displays user immersion statistics with charts and heatmaps
+ * @module commands/stat
+ */
+
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require("discord.js"); 
 const db = require("../firebase/firestore");
 const { getUserStreak } = require("../utils/streak");
@@ -9,11 +15,11 @@ module.exports = {
   name: "stat",
   data: new SlashCommandBuilder()
     .setName("stat")
-    .setDescription("Lihat total immersion kamu dari semua jenis media")
+    .setDescription("View your total immersion from all media types")
     .addStringOption(option =>
       option
         .setName("visual_type")
-        .setDescription("Pilih jenis visualisasi")
+        .setDescription("Choose visualization type")
         .setRequired(false)
         .addChoices(
           { name: "Bar Chart", value: "barchart" },
@@ -23,7 +29,7 @@ module.exports = {
     .addIntegerOption(option =>
       option
         .setName("days")
-        .setDescription("Periode waktu (7 atau 30 hari)")
+        .setDescription("Time period (7 or 30 days)")
         .setRequired(false)
         .addChoices(
           { name: "7 days", value: 7 },
@@ -33,12 +39,17 @@ module.exports = {
     .addIntegerOption(option =>
       option
         .setName("year")
-        .setDescription("Tahun untuk heatmap (default: tahun ini)")
+        .setDescription("Year for heatmap (default: current year)")
         .setRequired(false)
         .setMinValue(2020)
         .setMaxValue(2030)
     ),
 
+  /**
+   * Execute the statistics command
+   * @param {Object} interaction - Discord interaction object
+   * @returns {Promise<void>}
+   */
   async execute(interaction) {
     await interaction.deferReply();
 
@@ -51,7 +62,7 @@ module.exports = {
     const userDoc = await db.collection("users").doc(user.id).get();
 
     if (!userDoc.exists || !userDoc.data().stats) {
-      return await interaction.editReply("🚫 Belum ada data immersion kamu.");
+      return await interaction.editReply("🚫 No immersion data found for you.");
     }
 
     const userData = userDoc.data();
@@ -76,7 +87,7 @@ module.exports = {
         return await interaction.editReply({ embeds: [embed], files: [attachment] });
       } catch (error) {
         console.error("Error generating heatmap:", error);
-        return await interaction.editReply("❌ Gagal membuat heatmap. Silakan coba lagi.");
+        return await interaction.editReply("❌ Failed to create heatmap. Please try again.");
       }
     }
 
@@ -96,7 +107,7 @@ module.exports = {
         return await interaction.editReply({ embeds: [embed], files: [attachment] });
       } catch (error) {
         console.error("Error generating chart:", error);
-        return await interaction.editReply("❌ Gagal membuat chart. Silakan coba lagi.");
+        return await interaction.editReply("❌ Failed to create chart. Please try again.");
       }
     }
 
@@ -158,7 +169,7 @@ module.exports = {
       const embed = new EmbedBuilder()
         .setColor(0x95a5a6)
         .setTitle(`📊 Immersion Stats`)
-        .setDescription("Belum ada aktivitas yang tercatat.")
+        .setDescription("No activity has been recorded yet.")
         .setTimestamp();
       
       return await interaction.editReply({ embeds: [embed] });
@@ -169,7 +180,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(0x2ecc71)
       .setTitle(`📊 Immersion Stats – ${profile?.displayName || profile?.username || user.username}`)
-      .setDescription(`**Total Points: ${totalPoints.toLocaleString()}** • **Total Sessions: ${totalSessions}**\n\n*Tip: Use \`/stat visual_type:barchart\` or \`/stat visual_type:heatmap\` untuk melihat visualisasi!*`)
+      .setDescription(`**Total Points: ${totalPoints.toLocaleString()}** • **Total Sessions: ${totalSessions}**\n\n*Tip: Use \`/stat visual_type:barchart\` or \`/stat visual_type:heatmap\` to see visualizations!*`)
       .setTimestamp();
 
     if (profile?.avatar) {
@@ -205,7 +216,12 @@ module.exports = {
   }
 };
 
-// Function to get heatmap data
+/**
+ * Get heatmap data for a user
+ * @param {string} userId - Discord user ID
+ * @param {number|null} year - Year to get data for (defaults to current year)
+ * @returns {Promise<Object>} Daily totals object with date keys and point values
+ */
 async function getHeatmapData(userId, year = null) {
   const targetYear = year || new Date().getFullYear();
   const startDate = new Date(targetYear, 0, 1);
@@ -256,11 +272,16 @@ async function getHeatmapData(userId, year = null) {
   return dailyTotals;
 }
 
-// Function to generate bar chart (fixed timezone issues)
+/**
+ * Generate bar chart for user statistics
+ * @param {string} userId - Discord user ID
+ * @param {number|null} days - Number of days to show (7 or 30, or null for all time)
+ * @returns {Promise<Buffer>} PNG image buffer
+ */
 async function generateBarChart(userId, days = null) {
-  const width = 1200;
-  const height = 800;
-  const canvas = createCanvas(width, height);
+  const CHART_WIDTH = 1200;
+  const CHART_HEIGHT = 800;
+  const canvas = createCanvas(CHART_WIDTH, CHART_HEIGHT);
   const ctx = canvas.getContext('2d');
 
   // Media type colors
@@ -369,7 +390,7 @@ async function generateBarChart(userId, days = null) {
 
   // Set dark background
   ctx.fillStyle = '#2c2c2d';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, CHART_WIDTH, CHART_HEIGHT);
 
   const chart = new Chart(ctx, config);
   
@@ -379,7 +400,12 @@ async function generateBarChart(userId, days = null) {
   return canvas.toBuffer('image/png');
 }
 
-// Get time-based data (7 or 30 days) - Fixed timezone issues
+/**
+ * Get time-based data for chart (7 or 30 days)
+ * @param {string} userId - Discord user ID
+ * @param {number} days - Number of days (7 or 30)
+ * @returns {Promise<Object>} Chart data and labels
+ */
 async function getTimeBasedData(userId, days) {
   const today = new Date();
   const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
@@ -403,11 +429,11 @@ async function getTimeBasedData(userId, days) {
     const data = doc.data();
     let dateStr;
     
-    // Prioritas menggunakan timestamps.date jika ada
+    // Prioritize using timestamps.date if available
     if (data.timestamps?.date) {
       dateStr = data.timestamps.date;
     } else {
-      // Convert Firebase Timestamp ke local date string
+      // Convert Firebase Timestamp to local date string
       const dateObj = data.timestamps.created.toDate();
       dateStr = dateObj.getFullYear() + '-' + 
                 String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + 
@@ -433,15 +459,15 @@ async function getTimeBasedData(userId, days) {
   const labels = [];
   const allDates = [];
   
-  // Generate semua tanggal dalam range
+  // Generate all dates in range
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     const dateStr = d.getFullYear() + '-' + 
                     String(d.getMonth() + 1).padStart(2, '0') + '-' + 
                     String(d.getDate()).padStart(2, '0');
     allDates.push(dateStr);
     
-    // Format label yang lebih readable
-    labels.push(d.toLocaleDateString('id-ID', { 
+    // Format label for better readability
+    labels.push(d.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric',
       weekday: 'short'
@@ -502,7 +528,11 @@ async function getTimeBasedData(userId, days) {
   };
 }
 
-// Get overall data by media type
+/**
+ * Get overall data by media type
+ * @param {string} userId - Discord user ID
+ * @returns {Promise<Object>} Chart data and labels
+ */
 async function getOverallData(userId) {
   const userDoc = await db.collection("users").doc(userId).get();
   const stats = userDoc.data().stats || {};
@@ -555,6 +585,11 @@ async function getOverallData(userId) {
   };
 }
 
+/**
+ * Get points multiplier for media type
+ * @param {string} mediaType - Media type
+ * @returns {number} Points multiplier
+ */
 function getPointsMultiplier(mediaType) {
   const multipliers = {
     visual_novel: 0.0028571428571429,

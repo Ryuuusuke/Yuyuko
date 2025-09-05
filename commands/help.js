@@ -3,10 +3,10 @@ const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("help")
-    .setDescription("Lihat panduan penggunaan bot immersion tracker")
+    .setDescription("View usage guide for immersion tracker bot")
     .addStringOption(option =>
       option.setName("language")
-        .setDescription("Pilih bahasa panduan (id/en)")
+        .setDescription("Select guide language (id/en)")
         .addChoices(
           { name: "Indonesia", value: "id" },
           { name: "English", value: "en" }
@@ -113,87 +113,87 @@ module.exports = {
     } else {
       embed = new EmbedBuilder()
         .setColor(0x00bfff)
-        .setTitle("Panduan Penggunaan Yuyuko Bot")
-        .setDescription("Berikut beberapa command dan fungsinya:")
+        .setTitle("Yuyuko Bot Usage Guide")
+        .setDescription("Here are some commands and their functions:")
         .addFields(
           {
-            name: "/immersion `[media] [amount] [title (opsional)] [comment (opsional)]`",
+            name: "/immersion `[media] [amount] [title (optional)] [comment (optional)]`",
             value:
-              "Catat aktivitas immersion bahasa Jepang kamu secara otomatis, termasuk pengambilan info dari YouTube, AniList, dan VNDB.\n" +
-              "- `media`: Jenis media seperti `anime`, `manga`, `visual_novel`, `book`, `reading`, `listening`, `reading_time`.\n" +
-              "- `amount`: Jumlah aktivitas (menit/halaman/episode/karakter).\n" +
-              "- `title` (opsional): Judul media (mendukung autocomplete dan info otomatis).\n" +
-              "- `comment` (opsional): Catatan atau komentar tambahan.\n" +
-              "Untuk listening via YouTube, bot akan otomatis mengambil judul, durasi, dan thumbnail.",
+              "Log your Japanese immersion activity automatically, including info fetching from YouTube, AniList, and VNDB.\n" +
+              "- `media`: Media type like `anime`, `manga`, `visual_novel`, `book`, `reading`, `listening`, `reading_time`.\n" +
+              "- `amount`: Amount of activity (minutes/pages/episodes/characters).\n" +
+              "- `title` (optional): Media title (supports autocomplete and automatic info).\n" +
+              "- `comment` (optional): Additional notes or comments.\n" +
+              "For listening via YouTube, the bot will automatically fetch title, duration, and thumbnail.",
           },
           {
-            name: "/stat `[visual_type (opsional)] [days (opsional)] [year (opsional)]`",
+            name: "/stat `[visual_type (optional)] [days (optional)] [year (optional)]`",
             value:
-              "Lihat statistik immersion kamu secara total, dengan pilihan tampilan:\n" +
-              "- `visual_type` (opsional): Pilih grafik `barchart` (grafik batang) atau `heatmap` (kalender aktivitas).\n" +
-              "- `days` (opsional): Periode data untuk `barchart`, misalnya `7` atau `30` hari.\n" +
-              "- `year` (opsional): Tahun untuk heatmap (default: tahun ini).\n" +
-              "Mendukung tampilan poin, sesi, dan streak untuk semua media.",
+              "View your total immersion statistics, with display options:\n" +
+              "- `visual_type` (optional): Choose chart `barchart` (bar chart) or `heatmap` (activity calendar).\n" +
+              "- `days` (optional): Data period for `barchart`, e.g. `7` or `30` days.\n" +
+              "- `year` (optional): Year for heatmap (default: current year).\n" +
+              "Supports points, sessions, and streak display for all media.",
           },
           {
             name: "/log time `[timeframe]`",
             value:
-              "Lihat dan kelola log immersion kamu dengan sistem pagination interaktif.\n" +
-              "- `timeframe`: Pilih `24h` (24 jam terakhir) atau `7d` (7 hari terakhir).\n" +
-              "Setelah memilih, kamu bisa pilih jenis media dan menghapus log dengan tombol **Delete**.",
+              "View and manage your immersion logs with interactive pagination system.\n" +
+              "- `timeframe`: Choose `24h` (last 24 hours) or `7d` (last 7 days).\n" +
+              "After selecting, you can choose media type and delete logs with the **Delete** button.",
           },
           {
-            name: "/leaderboard `[timestamp] [media_type] [month (opsional)] [year (opsional)]`",
+            name: "/leaderboard `[timestamp] [media_type] [month (optional)] [year (optional)]`",
             value:
-              "Lihat papan peringkat immersion berdasarkan poin yang dikumpulkan.\n" +
-              "- `timestamp`: Pilih periode waktu (`weekly`, `monthly`, `yearly`, `all_time`).\n" +
-              "- `media_type`: Filter leaderboard berdasarkan media (`anime`, `manga`, `book`, dll, atau `all`).\n" +
-              "- `month` & `year` (opsional): Untuk leaderboard bulanan/tahunan spesifik.\n" +
-              "Data dihitung secara real-time dari log immersion semua user.",
+              "View immersion leaderboard based on collected points.\n" +
+              "- `timestamp`: Choose time period (`weekly`, `monthly`, `yearly`, `all_time`).\n" +
+              "- `media_type`: Filter leaderboard by media (`anime`, `manga`, `book`, etc, or `all`).\n" +
+              "- `month` & `year` (optional): For specific monthly/yearly leaderboard.\n" +
+              "Data is calculated in real-time from all users' immersion logs.",
           },
           {
             name: "/novel `[title]`",
             value:
-              "Cari dan unduh light novel dengan cepat berdasarkan judul.\n" +
-              "- `title`: Judul light novel dalam karakter Jepang (kanji/kana).\n" +
-              "Bot akan menampilkan daftar hasil dengan tombol **Next/Prev** untuk navigasi.",
+              "Search and download light novels quickly based on title.\n" +
+              "- `title`: Light novel title in Japanese characters (kanji/kana).\n" +
+              "Bot will display results list with **Next/Prev** buttons for navigation.",
           },
           {
-            name: "/subs `[name] [episode (opsional)]`",
+            name: "/subs `[name] [episode (optional)]`",
             value:
-              "Cari dan download subtitle anime dari situs **Jimaku** langsung via bot.\n" +
-              "- `name`: Nama anime (dengan autocomplete).\n" +
-              "- `episode` (opsional): Nomor episode spesifik (misal: `1`, `12`).\n" +
-              "File akan dikirim ke DM kamu (jika tidak diblokir).",
+              "Search and download anime subtitles from **Jimaku** site directly via bot.\n" +
+              "- `name`: Anime name (with autocomplete).\n" +
+              "- `episode` (optional): Specific episode number (e.g.: `1`, `12`).\n" +
+              "File will be sent to your DM (if not blocked).",
           },
           {
             name: "/react `[message]`",
             value:
-              "Tambahkan emoji animasi ke pesan tertentu secara interaktif.\n" +
-              "- `message`: ID atau link pesan yang ingin diberi react.\n" +
-              "Setelah itu kamu akan diberi pilihan emoji animasi yang tersedia.",
+              "Add animated emojis to specific messages interactively.\n" +
+              "- `message`: ID or link of message to react to.\n" +
+              "You will then be given available animated emoji options.",
           },
           {
-            name: "/help `[language (opsional)]`",
-            value: "Lihat panduan penggunaan bot ini.\n" +
-                   "- `language` (opsional): Pilih bahasa panduan (`id`/`en`). Default: `id`.",
+            name: "/help `[language (optional)]`",
+            value: "View this bot's usage guide.\n" +
+                   "- `language` (optional): Choose guide language (`id`/`en`). Default: `id`.",
           },
           {
-            name: "@Bot (Interaksi Langsung)",
+            name: "@Bot (Direct Interaction)",
             value:
-              "Tanya apa pun ke bot dengan me-mention dia, seperti: `@Yuyuko Bot hari ini ngapain ya?`\n" +
-              "Fitur-fitur:\n" +
-              "- Jawab pertanyaan umum (cuaca, saran, dll)\n" +
-              "- Generate atau analisis **gambar** (termasuk foto profil)\n" +
-              "- Bicara natural, ramah, dan mengenali kamu\n" +
-              "- **Mengingat** interaksi sebelumnya",
+              "Ask anything to the bot by mentioning it, like: `@Yuyuko Bot what should I do today?`\n" +
+              "Features:\n" +
+              "- Answer general questions (weather, advice, etc)\n" +
+              "- Generate or analyze **images** (including profile picture)\n" +
+              "- Speak naturally, friendly, and recognize you\n" +
+              "- **Remember** previous interactions",
           },
           {
             name: "Tips",
             value:
-              "- Gunakan autocomplete untuk memilih judul anime/manga/VN.\n" +
-              "- Kamu bisa **hapus log** dengan klik tombol `Delete xx` di `/log`.\n" +
-              "- Jika subtitle Jimaku tidak bisa dikirim via DM, pastikan kamu mengaktifkan DM jangan private.",
+              "- Use autocomplete to select anime/manga/VN titles.\n" +
+              "- You can **delete logs** by clicking the `Delete xx` button in `/log`.\n" +
+              "- If Jimaku subtitles can't be sent via DM, make sure you enable DM don't set to private.",
           }
         )
         .setFooter({

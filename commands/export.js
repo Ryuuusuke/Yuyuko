@@ -1,9 +1,19 @@
+/**
+ * Export immersion logs command
+ * Allows users to export their immersion logs as a text file
+ * @module commands/export
+ */
+
 const { SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 const db = require("../firebase/firestore");
 const fs = require("fs");
 const path = require("path");
 
-// Helper function to format date
+/**
+ * Format timestamp as a readable date string
+ * @param {Object|Date|number} timestamp - Timestamp to format
+ * @returns {string} Formatted date string
+ */
 function formatDate(timestamp) {
   let logDate;
   
@@ -28,7 +38,13 @@ function formatDate(timestamp) {
   });
 }
 
-// Helper function to get logs from database
+/**
+ * Get user immersion logs from database
+ * @param {string} userId - Discord user ID
+ * @param {string} timeframe - Timeframe filter
+ * @param {string|null} mediaType - Media type filter
+ * @returns {Promise<Array>} Array of log objects
+ */
 async function getUserLogs(userId, timeframe, mediaType = null) {
   const now = new Date();
   let startDate;
@@ -69,14 +85,20 @@ async function getUserLogs(userId, timeframe, mediaType = null) {
   }));
 }
 
-// Helper function to generate text content for export
+/**
+ * Generate export content for text file
+ * @param {Array} logs - Array of log objects
+ * @param {string} timeframe - Timeframe filter
+ * @param {string} mediaType - Media type filter
+ * @param {string} username - Discord username
+ * @returns {string} Formatted export content
+ */
 function generateExportContent(logs, timeframe, mediaType, username) {
   const mediaTypeLabel = mediaType && mediaType !== 'all' ? getMediaTypeLabel(mediaType) : 'All Media Types';
   const timeframeLabel = getTimeframeLabel(timeframe);
   
   let content = `Immersion Logs Export
-`;
-  content += `====================
+====================
 
 `;
   content += `User: ${username}
@@ -115,8 +137,7 @@ function generateExportContent(logs, timeframe, mediaType, username) {
   });
   
   content += `Summary Statistics:
-`;
-  content += `------------------
+------------------
 `;
   for (const [type, data] of Object.entries(stats)) {
     const label = getMediaTypeLabel(type);
@@ -126,11 +147,10 @@ function generateExportContent(logs, timeframe, mediaType, username) {
   content += `
 
 `;
-  
+
   // Detailed logs
   content += `Detailed Logs:
-`;
-  content += `-------------
+-------------
 `;
   
   logs.forEach((log, index) => {
@@ -161,7 +181,11 @@ function generateExportContent(logs, timeframe, mediaType, username) {
   return content;
 }
 
-// Helper function to get media type label
+/**
+ * Get media type label for display
+ * @param {string} mediaType - Media type
+ * @returns {string} Media type label
+ */
 function getMediaTypeLabel(mediaType) {
   const labelMap = {
     visual_novel: "Visual Novel",
@@ -175,7 +199,11 @@ function getMediaTypeLabel(mediaType) {
   return labelMap[mediaType] || mediaType;
 }
 
-// Helper function to get unit for type
+/**
+ * Get unit for media type
+ * @param {string} type - Media type
+ * @returns {string} Unit
+ */
 function getUnitForType(type) {
   const unitMap = {
     visual_novel: "characters",
@@ -189,7 +217,11 @@ function getUnitForType(type) {
   return unitMap[type] || "units";
 }
 
-// Helper function to get timeframe label
+/**
+ * Get timeframe label for display
+ * @param {string} timeframe - Timeframe
+ * @returns {string} Timeframe label
+ */
 function getTimeframeLabel(timeframe) {
   const labelMap = {
     day: "Last 24 Hours",
@@ -235,6 +267,11 @@ module.exports = {
         )
     ),
 
+  /**
+   * Execute the export command
+   * @param {Object} interaction - Discord interaction object
+   * @returns {Promise<void>}
+   */
   async execute(interaction) {
     const user = interaction.user;
     const timeframe = interaction.options.getString("timeframe");

@@ -1,3 +1,9 @@
+/**
+ * Ayumi AI assistant command handler
+ * Handles direct interactions with the bot through mentions
+ * @module commands/geminiReply
+ */
+
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY } = require("../environment");
 
@@ -10,10 +16,22 @@ const userData = new Map();
 
 // === Core Utility Functions ===
 
+/**
+ * Get user data from in-memory storage
+ * @param {string} userId - Discord user ID
+ * @returns {Object|undefined} User data or undefined if not found
+ */
 function getUserData(userId) {
   return userData.get(userId);
 }
 
+/**
+ * Update conversation history for a user
+ * @param {string} userId - Discord user ID
+ * @param {string} userMessage - User's message
+ * @param {string} botReply - Bot's reply
+ * @returns {void}
+ */
 function updateConversationHistory(userId, userMessage, botReply) {
   const data = getUserData(userId);
   if (!data) return;
@@ -23,6 +41,15 @@ function updateConversationHistory(userId, userMessage, botReply) {
   userData.set(userId, { ...data, conversationHistory: history });
 }
 
+/**
+ * Store or update user data in in-memory storage
+ * @param {string} userId - Discord user ID
+ * @param {string} username - Discord username
+ * @param {string} displayName - Discord display name
+ * @param {string|null} nickname - Server nickname (optional)
+ * @param {Object|null} guildMember - Guild member object (optional)
+ * @returns {void}
+ */
 function storeUserData(userId, username, displayName, nickname = null, guildMember = null) {
   const existingData = userData.get(userId) || {};
   let bestName = guildMember?.nickname || guildMember?.displayName || displayName || username;
@@ -41,11 +68,22 @@ function storeUserData(userId, username, displayName, nickname = null, guildMemb
   });
 }
 
+/**
+ * Get user's preferred name
+ * @param {string} userId - Discord user ID
+ * @returns {string|null} User's preferred name or null if not found
+ */
 function getUserName(userId) {
   const user = getUserData(userId);
   return user?.guildNickname || user?.bestName || user?.displayName || user?.username || null;
 }
 
+/**
+ * Get recent conversation history from the channel
+ * @param {Object} message - Discord message object
+ * @param {number} limit - Number of messages to fetch (default: 5)
+ * @returns {Promise<Array>} Array of message objects with author, content, and timestamp
+ */
 async function getConversationHistory(message, limit = 5) {
   try {
     const messages = await message.channel.messages.fetch({ 
@@ -71,14 +109,19 @@ async function getConversationHistory(message, limit = 5) {
     }
     
     return history;
-  } catch (err) {
-    console.error("Error fetching conversation history:", err.message);
+  } catch (error) {
+    console.error("Error fetching conversation history:", error.message);
     return [];
   }
 }
 
 // === Image Processing Functions ===
 
+/**
+ * Download image from URL
+ * @param {string} url - Image URL
+ * @returns {Promise<Uint8Array>} Image data as byte array
+ */
 async function downloadImage(url) {
   try {
     const response = await fetch(url);
@@ -91,6 +134,11 @@ async function downloadImage(url) {
   }
 }
 
+/**
+ * Detect if user is asking about avatar/foto profil
+ * @param {string} text - User input text
+ * @returns {boolean} True if text contains avatar-related keywords
+ */
 function detectAvatarQuestions(text) {
   const avatarKeywords = [
     'foto profil', 'avatar', 'profile picture', 'pp', 'foto pp',
@@ -102,6 +150,11 @@ function detectAvatarQuestions(text) {
   return avatarKeywords.some(keyword => lowerText.includes(keyword));
 }
 
+/**
+ * Detect if user is requesting image generation
+ * @param {string} text - User input text
+ * @returns {boolean} True if text contains image generation keywords
+ */
 function detectImageGeneration(text) {
   const genKeywords = [
     'buatkan gambar', 'generate gambar', 'buat gambar', 'gambarkan',
@@ -113,6 +166,14 @@ function detectImageGeneration(text) {
   return genKeywords.some(keyword => lowerText.includes(keyword));
 }
 
+/**
+ * Analyze image using Gemini AI
+ * @param {string} imageUrl - URL of image to analyze
+ * @param {string} userName - Name of user requesting analysis
+ * @param {string} userQuestion - User's question about the image
+ * @param {boolean} isAvatar - Whether the image is a user avatar
+ * @returns {Promise<string>} AI-generated response
+ */
 async function analyzeImage(imageUrl, userName, userQuestion, isAvatar = false) {
   try {
     const imageData = await downloadImage(imageUrl);
@@ -155,7 +216,12 @@ Respons as Ayumi:`;
   }
 }
 
-// Simplified image generation with fallback
+/**
+ * Generate image using Gemini AI
+ * @param {string} prompt - Image generation prompt
+ * @param {string} userName - Name of user requesting generation
+ * @returns {Promise<Object>} Image generation result
+ */
 async function generateImage(prompt, userName) {
   const cleanPrompt = prompt
     .replace(/buatkan gambar|generate gambar|buat gambar|gambarkan|draw|create image|bikin gambar|lukis|sketch|ilustrasi/gi, '')
@@ -184,9 +250,9 @@ async function generateImage(prompt, userName) {
     }
   ];
 
-  for (let i = 0; i < methods.length; i++) {
+  for (let methodIndex = 0; methodIndex < methods.length; methodIndex++) {
     try {
-      const result = await methods[i]();
+      const result = await methods[methodIndex]();
       const response = result.response;
       
       if (response.candidates?.[0]?.content?.parts) {
@@ -204,8 +270,8 @@ async function generateImage(prompt, userName) {
         }
       }
     } catch (error) {
-      console.error(`Image generation method ${i + 1} failed:`, error);
-      if (i === methods.length - 1) throw error;
+      console.error(`Image generation method ${methodIndex + 1} failed:`, error);
+      if (methodIndex === methods.length - 1) throw error;
     }
   }
   
@@ -248,6 +314,12 @@ GAYA BICARA:
 `;
 
 // === Main Command Handler ===
+
+/**
+ * Handle Ayumi command interactions
+ * @param {Object} message - Discord message object
+ * @returns {Promise<void>}
+ */
 async function handleAyumiCommand(message) {
   // Extract command content 
   let prompt;
@@ -319,8 +391,8 @@ async function handleAyumiCommand(message) {
           updateConversationHistory(userId, prompt, successResponse);
           return;
         }
-      } catch (imageGenError) {
-        console.error('Image generation failed:', imageGenError);
+      } catch (error) {
+        console.error('Image generation failed:', error);
         
         try {
           await generatingMessage.delete();
@@ -340,11 +412,16 @@ async function handleAyumiCommand(message) {
         await message.reply(imageAnalysis);
         updateConversationHistory(userId, `[Mengirim gambar] ${prompt}`, imageAnalysis);
         return;
-      } catch (imageError) {
-        console.error('Image analysis failed:', imageError);
+      } catch (error) {
+        console.error('Image analysis failed:', error);
+        
+        try {
+          await generatingMessage.delete();
+        } catch (e) {}
+        
         const fallbackResponse = userName 
-          ? `${userName}, Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~`
-          : "Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~";
+          ? `${userName}, maaf nih Ayumi lagi gabisa analisis gambar. Sistem lagi error! Coba lagi nanti ya~`
+          : "Maaf nih Ayumi lagi gabisa analisis gambar. Sistem lagi error! Coba lagi nanti ya~";
         return message.reply(fallbackResponse);
       }
     }
@@ -440,7 +517,13 @@ async function handleAyumiCommand(message) {
 // === Exports ===
 module.exports = handleAyumiCommand;
 
-// Utility exports
+/**
+ * Track user immersion activity
+ * @param {string} userId - Discord user ID
+ * @param {string} activity - Activity type
+ * @param {number} duration - Activity duration
+ * @returns {void}
+ */
 module.exports.trackImmersion = function(userId, activity, duration) {
   const user = getUserData(userId);
   if (!user) return;
@@ -449,6 +532,11 @@ module.exports.trackImmersion = function(userId, activity, duration) {
   userData.set(userId, user);
 };
 
+/**
+ * Get user immersion statistics
+ * @param {string} userId - Discord user ID
+ * @returns {Object|null} User immersion stats or null if not found
+ */
 module.exports.getImmersionStats = function(userId) {
   const user = getUserData(userId);
   if (!user || !user.immersionLog) return null;
@@ -464,6 +552,13 @@ module.exports.getUserData = getUserData;
 module.exports.getUserName = getUserName;
 module.exports.getAllUsers = () => Array.from(userData.values());
 module.exports.clearUserData = userId => userData.delete(userId);
+
+/**
+ * Update user's preferred name
+ * @param {string} userId - Discord user ID
+ * @param {string} newName - New preferred name
+ * @returns {boolean} True if update was successful
+ */
 module.exports.updateUserName = (userId, newName) => {
   const user = getUserData(userId);
   if (user) {

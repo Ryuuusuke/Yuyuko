@@ -1,3 +1,9 @@
+/**
+ * React command
+ * Allows users to react to messages with animated emojis
+ * @module commands/react
+ */
+
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -13,22 +19,27 @@ const BUTTONS_PER_ROW = 5;
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('react')
-    .setDescription('React ke pesan dengan emoji animasi')
+    .setDescription('React to a message with animated emojis')
     .addStringOption(option =>
       option
-        .setName('pesan')
-        .setDescription('ID atau link pesan yang ingin direact')
+        .setName('message')
+        .setDescription('ID or link of the message to react to')
         .setRequired(true)
     ),
 
+  /**
+   * Execute the react command
+   * @param {Object} interaction - Discord interaction object
+   * @returns {Promise<void>}
+   */
   async execute(interaction) {
     try {
       await interaction.deferReply({ ephemeral: true });
-      const input = interaction.options.getString('pesan');
+      const input = interaction.options.getString('message');
 
       if (!input?.trim()) {
         return interaction.editReply({
-          content: 'Input pesan tidak valid.',
+          content: 'Invalid message input.',
           embeds: [],
           components: []
         });
@@ -43,7 +54,7 @@ module.exports = {
       } else {
         if (!/^\d{17,19}$/.test(input.trim())) {
           return interaction.editReply({
-            content: 'ID pesan tidak valid. Gunakan ID 17–19 digit atau link pesan.',
+            content: 'Invalid message ID. Use a 17-19 digit ID or message link.',
             embeds: [],
             components: []
           });
@@ -64,7 +75,7 @@ module.exports = {
 
       if (validEmojis.length === 0) {
         return interaction.editReply({
-          content: 'Emoji animasi tidak ditemukan atau tidak valid.',
+          content: 'No animated emojis found or they are invalid.',
           embeds: [],
           components: []
         });
@@ -76,7 +87,7 @@ module.exports = {
         if (!channel || !channel.isTextBased()) throw new Error('Not text-based');
       } catch {
         return interaction.editReply({
-          content: 'Channel tidak ditemukan atau bot tidak memiliki akses.',
+          content: 'Channel not found or bot does not have access.',
           embeds: [],
           components: []
         });
@@ -88,7 +99,7 @@ module.exports = {
         if (!message) throw new Error('Message not found');
       } catch {
         return interaction.editReply({
-          content: `Pesan tidak ditemukan di <#${channelId}>.`,
+          content: `Message not found in <#${channelId}>.`,
           embeds: [],
           components: []
         });
@@ -99,7 +110,7 @@ module.exports = {
 
       if (!channelPermissions?.has(['ViewChannel', 'AddReactions'])) {
         return interaction.editReply({
-          content: `Bot tidak memiliki permission untuk mereact di <#${channelId}>.`,
+          content: `Bot does not have permission to react in <#${channelId}>.`,
           embeds: [],
           components: []
         });
@@ -107,24 +118,29 @@ module.exports = {
 
       if (Date.now() - message.createdTimestamp > 14 * 24 * 60 * 60 * 1000) {
         return interaction.editReply({
-          content: 'Pesan terlalu lama (lebih dari 14 hari) untuk direact.',
+          content: 'Message is too old (more than 14 days) to react to.',
           embeds: [],
           components: []
         });
       }
 
       const embed = new EmbedBuilder()
-        .setTitle('🎭 Pilih Emoji untuk React')
+        .setTitle('🎭 Choose Emoji to React')
         .setDescription(
           message.url
-            ? `Klik emoji di bawah untuk mereact pesan [ini](${message.url})`
-            : `Klik emoji di bawah untuk mereact pesan.`
+            ? `Click an emoji below to react to [this message](${message.url})`
+            : `Click an emoji below to react to the message.`
         )
         .setColor(0x00AE86)
         .setTimestamp();
 
       let currentPage = 0;
 
+      /**
+       * Generate emoji buttons for current page
+       * @param {number} page - Page number
+       * @returns {Array} Array of ActionRowBuilder objects
+       */
       const generateEmojiRows = (page) => {
         const start = page * EMOJIS_PER_PAGE;
         const pageEmojis = validEmojis.slice(start, start + EMOJIS_PER_PAGE);
@@ -189,8 +205,8 @@ module.exports = {
             await message.react(emojiId);
 
             const successEmbed = new EmbedBuilder()
-              .setTitle('React Berhasil')
-              .setDescription(`Pesan berhasil direact dengan emoji **${emojiName}**`)
+              .setTitle('Reaction Successful')
+              .setDescription(`Message successfully reacted with emoji **${emojiName}**`)
               .setColor(0x00FF00)
               .setTimestamp()
               .setImage(`https://cdn.discordapp.com/emojis/${emojiId}.gif`)
@@ -216,16 +232,16 @@ module.exports = {
           }
 
         } catch (err) {
-          console.error('Gagal handle tombol:', err);
-          await button.reply({ content: 'Terjadi kesalahan saat memproses tombol.', ephemeral: true });
+          console.error('Failed to handle button:', err);
+          await button.reply({ content: 'An error occurred while processing the button.', ephemeral: true });
         }
       });
 
       collector.on('end', async (_, reason) => {
         if (reason !== 'done') {
           const timeoutEmbed = new EmbedBuilder()
-            .setTitle('Waktu Habis')
-            .setDescription('Tidak ada emoji yang dipilih dalam 60 detik.')
+            .setTitle('Time Expired')
+            .setDescription('No emoji was selected within 60 seconds.')
             .setColor(0xFF9900)
             .setTimestamp();
 
@@ -238,8 +254,8 @@ module.exports = {
       });
 
     } catch (error) {
-      console.error('Error utama:', error);
-      const fallback = 'Terjadi kesalahan internal. Silakan coba lagi.';
+      console.error('Main error:', error);
+      const fallback = 'An internal error occurred. Please try again.';
 
       try {
         if (interaction.deferred && !interaction.replied) {
