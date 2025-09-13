@@ -49,42 +49,5 @@ module.exports = {
                                 }
                         });
                 }
-                // reply to user when afk
-                if (message.reference?.messageId) {
-                        try {
-                                const repliedMsg =
-                                        await message.channel.messages.fetch(
-                                                message.reference.messageId,
-                                        );
-                                const repliedUser = repliedMsg.author;
-
-                                if (afkCommand.afkUsers?.has(repliedUser.id)) {
-                                        const afkData = afkCommand.afkUsers.get(
-                                                repliedUser.id,
-                                        );
-
-                                        const afkEmbed = new EmbedBuilder()
-                                                .setColor(0xe67e22)
-                                                .setAuthor({
-                                                        name: afkData.username,
-                                                        iconURL: repliedUser.displayAvatarURL(),
-                                                })
-                                                .setTitle(
-                                                        `${afkData.username} sedang AFK`,
-                                                )
-                                                .setDescription(
-                                                        `**Alasan :** ${afkData.reason}\n` +
-                                                                `**Sejak  :** <t:${Math.floor(afkData.timestamp / 1000)}:R>`,
-                                                )
-                                                .setTimestamp();
-                                        message.reply({ embeds: [afkEmbed] });
-                                }
-                        } catch (err) {
-                                console.error(
-                                        "Gagal fetch pesan reply:",
-                                        err.message,
-                                );
-                        }
-                }
         },
 };
