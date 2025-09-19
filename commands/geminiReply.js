@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY } = require("../environment");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 const imageGenModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-preview-image-generation" });
 
 // In-memory user data
@@ -10,7 +10,7 @@ const userData = new Map();
 
 // === Core Utility Functions ===
 
-function getUserData(userId) {
+function getUserData(userId) { 
   return userData.get(userId);
 }
 
@@ -440,9 +440,12 @@ async function handleTextConversation(message, prompt, userName, userId, userInf
 // === Main Command Handler ===
 async function handleAyumiCommand(message) {
   // Check if message is in a designated channel (you can customize this)
-  // Replace with your actual channel IDs
+  // These are the channel IDs where Ayumi will respond to all non-bot messages
+  // This list is maintained here for flexibility, separate from index.js
   const designatedChannelIds = [
-    "1176743181803602025"
+    "1176743181803602025", "1385220338631311360"
+    // Add more channel IDs here as needed
+    // Make sure to also add them to index.js if you want the messageCreate event to trigger
   ]; 
   const isDesignatedChannel = designatedChannelIds.includes(message.channel.id);
   
@@ -457,7 +460,7 @@ async function handleAyumiCommand(message) {
     // This is a reply to bot's message
     prompt = message.content.trim();
   } else {
-    // Not in designated channel and not a reply to bot, ignore
+    // Not in designated channel, not a reply to bot, and not a!ayumi command, ignore
     return;
   }
   
