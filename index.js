@@ -135,10 +135,8 @@ client.on("messageCreate", async (message) => {
                         return;
                 }
 
-                // Check if message is in a designated channel for Ayumi
-                // Replace with your actual channel IDs
                 const designatedChannelIds = [
-                        "1176743181803602025"
+                        "1176743181803602025", "1385220338631311360"
                 ];
                 
                 if (designatedChannelIds.includes(message.channel.id) && !message.author.bot) {
@@ -149,7 +147,7 @@ client.on("messageCreate", async (message) => {
                 // Other existing handlers
                 if (message.content.startsWith("k!quiz"))
                         trackUserQuizStart(message);
-                if (message.author.id === "251239170058616833")
+                if (message.author.id === "251239170058616833") 
                         await checkRank(message);
         } catch (error) {
                 console.error("Error in messageCreate:", error.message);
