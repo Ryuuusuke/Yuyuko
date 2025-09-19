@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY } = require("../environment");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 const imageGenModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-preview-image-generation" });
 
 // In-memory user data
@@ -96,7 +96,9 @@ function detectImageGeneration(text) {
   const genKeywords = [
     'buatkan gambar', 'generate gambar', 'buat gambar', 'gambarkan',
     'draw', 'create image', 'generate image', 'bikin gambar',
-    'lukis', 'sketch', 'ilustrasi', 'visualisasi'
+    'lukis', 'sketch', 'ilustrasi', 'visualisasi', 'gambarkan',
+    'make an image', 'buatkan ilustrasi', 'create illustration',
+    'gambar anime', 'anime art', 'pixel art', 'artwork'
   ];
   
   const lowerText = text.toLowerCase();
@@ -140,11 +142,34 @@ Respons as Ayumi:`;
     return result.response.text();
 }
 
-// Simplified image generation with fallback
+// Enhanced image generation with user preferences
 async function generateImage(prompt, userName) {
-  const cleanPrompt = prompt
+  // Extract image generation keywords to identify user preferences
+  const genKeywords = [
+    'anime style', 'realistic', 'cartoon', 'pixel art', 'watercolor', 
+    'oil painting', 'sketch', 'line art', '3D render', 'digital art',
+    'chibi', 'manga style', 'fantasy', 'cyberpunk', 'steampunk'
+  ];
+  
+  let imageStyle = '';
+  let cleanPrompt = prompt
     .replace(/buatkan gambar|generate gambar|buat gambar|gambarkan|draw|create image|bikin gambar|lukis|sketch|ilustrasi/gi, '')
     .trim();
+  
+  // Check for specific style preferences in the prompt
+  for (const keyword of genKeywords) {
+    if (cleanPrompt.toLowerCase().includes(keyword)) {
+      imageStyle = keyword;
+      break;
+    }
+  }
+  
+  // If no specific style mentioned, default to anime style (matches Ayumi's character)
+  if (!imageStyle) {
+    imageStyle = 'anime style';
+  }
+  
+  const fullPrompt = `Create a high-quality, detailed image in ${imageStyle} of: ${cleanPrompt}. Make it visually appealing, artistic, and well-composed.`;
   
   const methods = [
     // Method 1: With response modalities
@@ -152,7 +177,7 @@ async function generateImage(prompt, userName) {
       return await imageGenModel.generateContent({
         contents: [{
           role: 'user',
-          parts: [{ text: `Create a high-quality, detailed image of: ${cleanPrompt}. Make it visually appealing, artistic, and well-composed.` }]
+          parts: [{ text: fullPrompt }]
         }],
         generationConfig: {
           temperature: 0.7,
@@ -163,9 +188,7 @@ async function generateImage(prompt, userName) {
     
     // Method 2: Simple approach
     async () => {
-      return await imageGenModel.generateContent(
-        `Create a detailed, high-quality image: ${cleanPrompt}`
-      );
+      return await imageGenModel.generateContent(fullPrompt);
     }
   ];
 
@@ -183,7 +206,8 @@ async function generateImage(prompt, userName) {
             success: true,
             imageData: imagePart.inlineData.data,
             mimeType: imagePart.inlineData.mimeType,
-            text: textPart?.text || 'Image generated successfully!'
+            text: textPart?.text || 'Image generated successfully!',
+            style: imageStyle
           };
         }
       }
@@ -319,7 +343,7 @@ async function handleTextConversation(message, prompt, userName, userId, userInf
     if (conversationHistory.length > 0) {
       historyContext = "\n\nRIWAYAT PERCAKAPAN TERAKHIR:\n";
       conversationHistory.forEach((msg) => {
-        historyContext += `${msg.author}: \"${msg.content}\"\n`;
+        historyContext += `${msg.author}: "${msg.content}"\n`;
       });
     }
 
@@ -329,7 +353,7 @@ async function handleTextConversation(message, prompt, userName, userId, userInf
       personalHistoryContext = "\n\nRIWAYAT PERCAKAPAN DENGAN USER INI:\n";
       recentHistory.forEach((msg) => {
         const speaker = msg.type === "user" ? userName || "User" : "Ayumi";
-        personalHistoryContext += `${speaker}: \"${msg.content.substring(0, 150)}${msg.content.length > 150 ? '...' : ''}\"\n`;
+        personalHistoryContext += `${speaker}: "${msg.content}"\n`;
       });
     }
 
@@ -340,22 +364,68 @@ async function handleTextConversation(message, prompt, userName, userId, userInf
         if (referencedMessage) {
           const replyAuthor = referencedMessage.author.id === message.client.user.id ? 'Ayumi' :
                              (referencedMessage.member?.nickname || referencedMessage.author.username);
-          replyContext = `\n\nUser sedang reply ke pesan: \"${referencedMessage.content.substring(0, 100)}\" dari ${replyAuthor}\n`;
+          replyContext = `\n\nUser sedang reply ke pesan: "${referencedMessage.content}" dari ${replyAuthor}\n`;
         }
       } catch (err) {
         console.error("Error fetching referenced message:", err);
       }
     }
 
-    const fullPrompt = `${AYUMI_SYSTEM_PROMPT}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: \"${prompt}\"\n\nRespond as Ayumi:`;
+    const fullPrompt = `${AYUMI_SYSTEM_PROMPT}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: "${prompt}"\n\nRespond as Ayumi:`;
     const result = await textModel.generateContent(fullPrompt);
     let reply = result.response.text();
 
+    // Split long messages into chunks of 2000 characters to comply with Discord's limit
     if (reply.length > 2000) {
-      reply = reply.substring(0, 1950) + "...\n\n*Ayumi terlalu excited sampai kecepetan ngomong~ Message terlalu panjang darling!*";
+      // Split into chunks of 1950 characters to leave room for continuation indicators
+      const chunks = [];
+      let currentChunk = "";
+      
+      // Split by lines to avoid cutting words in half
+      const lines = reply.split('\n');
+      
+      for (const line of lines) {
+        if (currentChunk.length + line.length + 1 <= 1950) {
+          currentChunk += (currentChunk ? '\n' : '') + line;
+        } else {
+          if (currentChunk) {
+            chunks.push(currentChunk);
+          }
+          // If a single line is longer than 1950 characters, we have to split it
+          if (line.length > 1950) {
+            // Split the long line into smaller parts
+            let position = 0;
+            while (position < line.length) {
+              const part = line.substring(position, position + 1950);
+              chunks.push(part);
+              position += 1950;
+            }
+            currentChunk = "";
+          } else {
+            currentChunk = line;
+          }
+        }
+      }
+      
+      // Add the last chunk if it exists
+      if (currentChunk) {
+        chunks.push(currentChunk);
+      }
+      
+      // Send all chunks
+      for (let i = 0; i < chunks.length; i++) {
+        if (i === 0) {
+          await message.reply(chunks[i] + (chunks.length > 1 ? "\n\n*Ayumi terlalu excited sampai kecepetan ngomong~ Lanjutannya dikirim di pesan selanjutnya ya!*..." : ""));
+        } else if (i === chunks.length - 1) {
+          await message.channel.send(chunks[i]);
+        } else {
+          await message.channel.send(chunks[i] + "\n\n*Lanjut...*");
+        }
+      }
+    } else {
+      await message.reply(reply);
     }
-
-    await message.reply(reply);
+    
     updateConversationHistory(userId, prompt, reply);
 
     // Random reaction
@@ -369,14 +439,33 @@ async function handleTextConversation(message, prompt, userName, userId, userInf
 
 // === Main Command Handler ===
 async function handleAyumiCommand(message) {
+  // Check if message is in a designated channel (you can customize this)
+  // Replace with your actual channel IDs
+  const designatedChannelIds = [
+    "1176743181803602025"
+  ]; 
+  const isDesignatedChannel = designatedChannelIds.includes(message.channel.id);
+  
   // Extract command content 
   let prompt;
   if (message.content.toLowerCase().startsWith('a!ayumi')) {
     prompt = message.content.slice(7).trim(); // Remove "a!ayumi" prefix
-  } else {
+  } else if (isDesignatedChannel && !message.author.bot) {
+    // In designated channel, respond to all non-bot messages
+    prompt = message.content.trim();
+  } else if (message.reference && message.reference.messageId) {
     // This is a reply to bot's message
     prompt = message.content.trim();
+  } else {
+    // Not in designated channel and not a reply to bot, ignore
+    return;
   }
+  
+  // Ignore empty prompts in designated channel
+  if (!prompt && isDesignatedChannel) {
+    return;
+  }
+  
   const userId = message.author.id;
   const username = message.author.username;
   const displayName = message.author.displayName;
@@ -388,8 +477,8 @@ async function handleAyumiCommand(message) {
   const userInfo = getUserData(userId);
   const userName = getUserName(userId);
 
-  // Handle empty command
-  if (!prompt) {
+  // Handle empty command (only for a!ayumi prefix)
+  if (!prompt && message.content.toLowerCase().startsWith('a!ayumi')) {
     const greetings = userName
       ? [
           `Ara ara~ ${userName} manggil Ayumi? Ada yang bisa Ayumi bantu?`,
