@@ -135,6 +135,17 @@ client.on("messageCreate", async (message) => {
                         return;
                 }
 
+                // Check if message is in a designated channel for Ayumi
+                // Replace with your actual channel IDs
+                const designatedChannelIds = [
+                        "1176743181803602025"
+                ];
+                
+                if (designatedChannelIds.includes(message.channel.id) && !message.author.bot) {
+                        await handleAyumiCommand(message);
+                        return;
+                }
+
                 // Other existing handlers
                 if (message.content.startsWith("k!quiz"))
                         trackUserQuizStart(message);
