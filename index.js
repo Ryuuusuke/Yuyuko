@@ -136,7 +136,7 @@ client.on("messageCreate", async (message) => {
                 }
 
                 const designatedChannelIds = [
-                        "1176743181803602025", "1385220338631311360"
+                        "1427247637618360432"
                 ];
                 
                 if (designatedChannelIds.includes(message.channel.id) && !message.author.bot) {

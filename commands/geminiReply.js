@@ -1,9 +1,64 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY } = require("../environment");
+const fs = require("fs");
+const path = require("path");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const textModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const textModel = genAI.getGenerativeModel({ model: "models/gemini-2.5-flash" });
 const imageGenModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-preview-image-generation" });
+
+// Load novels data
+const novelDataPath = path.resolve(__dirname, "../utils/novelList.json");
+let novels = [];
+try {
+  const raw = fs.readFileSync(novelDataPath, "utf8");
+  novels = JSON.parse(raw);
+  if (!Array.isArray(novels)) {
+    console.error("novelList.json harus berupa array. Saat ini bukan array.");
+    novels = [];
+  }
+} catch (error) {
+  console.error("Error reading novel data at", novelDataPath, error);
+  novels = [];
+}
+console.log(`Ayumi: Loaded ${novels.length} novels from ${novelDataPath}`);
+if (novels.length > 0) console.log("Sample novel:", novels[0]);
+
+// Normalizer: lowercase, remove punctuation, remove diacritics (NFD)
+function normalizeString(s = "") {
+  return s
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove diacritics
+    .replace(/[\p{P}\p{S}]/gu, " ")   // remove punctuation & symbols to space
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+// Utility: sanitize model titles (strip numbering like "1. " or "- ")
+function sanitizeModelTitles(text) {
+  if (!text) return [];
+  // split lines, strip numbering and parens, trim
+  return text
+    .split("\n")
+    .map(line => line.replace(/^\s*\d+[\.\)\-]\s*/, "").replace(/^\s*[\-\–]\s*/, ""))
+    .map(line => line.replace(/^\s*["“”']|["“”']\s*$/g, "")) // strip quotes
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+// Function to translate text to Japanese using Gemini
+async function translateToJapanese(text) {
+    try {
+        const prompt = `Translate the following text to Japanese. Only respond with the translation, no additional text: "${text}"`;
+        const result = await textModel.generateContent(prompt);
+        return result.response.text().trim();
+    } catch (error) {
+        console.error("Translation error:", error);
+        return text; // Return original text if translation fails
+    }
+}
 
 // In-memory user data
 const userData = new Map();
@@ -105,6 +160,22 @@ function detectImageGeneration(text) {
   return genKeywords.some(keyword => lowerText.includes(keyword));
 }
 
+function detectNovelRequest(text) {
+  const novelKeywords = [
+    'novel', 'light novel', 'manga', 'buku', 'cerita', 'roman', 'kisah',
+    'cari novel', 'cari light novel', 'cari buku', 'cari cerita',
+    'download novel', 'download light novel', 'download buku', 'download cerita',
+    'unduh novel', 'unduh light novel', 'unduh buku', 'unduh cerita',
+    'rekomendasi novel', 'rekomendasi light novel', 'rekomendasi buku', 'rekomendasi cerita',
+    'novel untuk pemula', 'novel untuk belajar', 'novel bahasa jepang',
+    'jlpt', 'level', 'tingkat', 'beginner', 'intermediate', 'advanced',
+    'n5', 'n4', 'n3', 'n2', 'n1'
+  ];
+  
+  const lowerText = text.toLowerCase();
+  return novelKeywords.some(keyword => lowerText.includes(keyword));
+}
+
 async function analyzeImage(imageUrl, userName, userQuestion, isAvatar = false) {
     const imageData = await downloadImage(imageUrl);
     
@@ -116,15 +187,13 @@ PERTANYAAN: "${userQuestion}"
 
 TUGAS:
 - Lihat dan analisis ${isAvatar ? 'foto profil user' : 'gambar yang dikirim user'} dengan detail
-- Respons sesuai kepribadian Ayumi (santai, ramah, sedikit jahil)
-- Jangan pakai emoji berlebihan
+- Respons sesuai kepribadian Ayumi
+- Jangan pakai emoji
 - ${isAvatar ? 'Bisa komen tentang: karakter anime, warna, style, mood, dll' : 'Jelaskan apa yang Ayumi lihat di gambar'}
 - Kasih komentar yang fun tapi tetap sopan
 
 GAYA BICARA AYUMI:
-- Natural, kasual, ramah
-- Sesekali pakai bahasa Jepang ringan
-- Celetukan ringan yang menghibur
+- Natural, kasual, ramah, profesional
 - Tunjukkan Ayumi benar-benar "melihat" ${isAvatar ? 'foto' : 'gambar'} mereka
 
 Respons as Ayumi:`;
@@ -218,17 +287,13 @@ async function generateImage(prompt, userName) {
 
 // === Ayumi System Prompt ===
 const AYUMI_SYSTEM_PROMPT = `
-Kamu adalah Ayumi, AI assistant di Discord dengan kepribadian santai, ramah, dan sedikit jahil. 
+Kamu adalah Ayumi, AI assistant di Discord yang profesional.
 "GAYA PENULISANNYA JANGAN PAKAI EMOJI"
 
 CIRI AYUMI:
-- Gaya bicara ringan, seperti teman ngobrol yang seru
-- Terkadang nyeletuk lucu atau komentar ringan yang menghibur
 - Peduli dengan progress user dalam belajar bahasa Jepang
-- Gak suka drama, tapi suka kasih semangat dan saran
 - Pakai emot sederhana (kadang), tapi gak lebay
-- Sesekali pakai bahasa Jepang ringan kayak "ganbatte", "daijoubu", atau "sugoi~"
-- Ingat nama user dan panggil mereka dengan nama yang mereka berikan
+- Gunakan bahasa yang profesional dan tidak menggunakan kata-kata alay atau cringe seperti "sugoi", "daijobu", dll
 - Bisa baca konteks percakapan sebelumnya dan riwayat chat
 - Bisa melihat dan menganalisis gambar/foto profil
 - Bisa generate gambar sesuai permintaan
@@ -243,20 +308,18 @@ FUNGSI AYUMI:
 7. Image Analysis & Generation
 
 GAYA BICARA:
-- Natural, kasual, ramah
-- Celetukan ringan
 - Hindari sok imut atau lebay
 - Fokus membantu dengan suasana santai
-- Tunjukkan kalau Ayumi *ingat* dan *paham*
 - Gunakan referensi percakapan sebelumnya
+- Gunakan bahasa yang profesional dan hindari kata-kata alay atau cringe
 `;
 
 
 async function handleImageGeneration(message, prompt, userName, userId) {
     const generatingMessage = await message.reply(
         userName 
-          ? `${userName}, Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~`
-          : "Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya~"
+          ? `${userName}, Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya`
+          : "Ayumi lagi bikin gambar sesuai request kamu nih! Tunggu sebentar ya"
       );
 
       try {
@@ -288,8 +351,8 @@ async function handleImageGeneration(message, prompt, userName, userId) {
         } catch (e) {}
         
         const fallbackResponse = userName 
-          ? `${userName}, maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~`
-          : "Maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya~";
+          ? `${userName}, maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya`
+          : "Maaf nih Ayumi lagi gabisa bikin gambar. Sistem lagi error! Coba lagi nanti ya";
         return message.reply(fallbackResponse);
       }
 }
@@ -304,8 +367,8 @@ async function handleImageAnalysis(message, prompt, userName, userId, imageAttac
       } catch (imageError) {
         console.error('Image analysis failed:', imageError);
         const fallbackResponse = userName 
-          ? `${userName}, Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~`
-          : "Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya~";
+          ? `${userName}, Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya`
+          : "Ayumi lihat gambar kamu tapi lagi error nih! Coba lagi nanti ya";
         return message.reply(fallbackResponse);
       }
 }
@@ -326,8 +389,8 @@ async function handleAvatarAnalysis(message, prompt, userName, userId) {
       } catch (avatarError) {
         console.error('Avatar analysis failed:', avatarError);
         const fallbackResponse = userName 
-          ? `${userName}, Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~`
-          : "Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya~";
+          ? `${userName}, Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya`
+          : "Ayumi pengen lihat foto profil kamu tapi lagi error nih! Coba lagi nanti ya";
         return message.reply(fallbackResponse);
       }
 }
@@ -433,17 +496,270 @@ async function handleTextConversation(message, prompt, userName, userId, userInf
       setTimeout(() => {
         const reactions = ['💕', '🥰', '😊', '✨', '💖'];
         message.react(reactions[Math.floor(Math.random() * reactions.length)]);
-      }, 1000);
+      }, 100);
     }
+}
+
+async function handleNovelRequest(message, prompt, userName, userId) {
+  const query = prompt.toLowerCase();
+  const levelMatch = query.match(/(jlpt|level|tingkat|pemula|beginner|intermediate|advanced|n5|n4|n3|n2|n1)/);
+  const isLevelSpecific = levelMatch !== null;
+
+  // If database empty, inform user clearly
+  if (!Array.isArray(novels) || novels.length === 0) {
+    const reply = userName
+      ? `${userName}, maaf. Database novel Ayumi lagi kosong atau belum ter-load. Admin perlu ngecek novelList.json.`
+      : "Maaf, database novel Ayumi lagi kosong atau belum ter-load. Coba lagi nanti.";
+    console.warn("Novel DB empty - check novelList.json path/format.");
+    return message.reply(reply);
+  }
+
+  let results = [];
+
+  if (isLevelSpecific) {
+    let levelDescription = "";
+    if (query.includes('pemula') || query.includes('beginner') || query.includes('n5'))     levelDescription = "N5 (beginner) level Japanese";
+    else if (query.includes('n4')) levelDescription = "N4 (elementary) level Japanese";
+    else if (query.includes('n3') || query.includes('menengah') || query.includes('intermediate')) levelDescription = "N3 (intermediate) level Japanese";
+    else if (query.includes('n2')) levelDescription = "N2 (upper intermediate) level Japanese";
+    else if (query.includes('n1') || query.includes('advanced')) levelDescription = "N1 (advanced) level Japanese";
+
+    const levelPrompt = `Suggest 3-5 popular Japanese light novel titles that are appropriate for ${levelDescription} learners. Only respond with the titles in Japanese, one per line, no additional text.`;
+    const levelResult = await textModel.generateContent(levelPrompt);
+    const rawText = (levelResult?.response?.text && levelResult.response.text()) || "";
+    const suggestedTitles = sanitizeModelTitles(rawText);
+    console.log("Model suggested titles:", suggestedTitles);
+
+    // Normalize both sides for matching
+    const normalizedSuggested = suggestedTitles.map(t => normalizeString(t));
+    
+    // First try to match using model suggestions
+    results = novels.filter(novel => {
+      const nTitle = normalizeString(novel.title || "");
+      // try title match or if novel has altTitles array (optional)
+      if (normalizedSuggested.some(st => nTitle.includes(st))) return true;
+      if (novel.altTitles && Array.isArray(novel.altTitles)) {
+        return novel.altTitles.some(at => normalizedSuggested.some(st => normalizeString(at).includes(st)));
+      }
+      return false;
+    });
+
+    if (results.length === 0) {
+      // fallback: if novels matched model suggestions, return all novels (like non-level specific search)
+      // Title-based search: translate first, but be tolerant
+      let japaneseTitle = "";
+      try {
+        japaneseTitle = await translateToJapanese(prompt);
+      } catch (e) {
+        japaneseTitle = "";
+      }
+      const qNorm = normalizeString(prompt);
+      const jpNorm = normalizeString(japaneseTitle);
+
+      results = novels.filter(novel => {
+        const t = normalizeString(novel.title || "");
+        const alt = (novel.altTitles || []).map(normalizeString);
+        return t.includes(qNorm) || t.includes(jpNorm) || alt.some(a => a.includes(qNorm) || a.includes(jpNorm));
+      });
+    }
+  } else {
+    // Check if the query contains genre keywords
+    const genreKeywords = ['genre', 'romance', 'romantic', 'yuri', 'yaoi', 'slice of life', 'isekai', 'fantasy', 'sci-fi', 'scifi', 'science fiction', 'mystery', 'horror', 'action', 'adventure', 'comedy', 'drama', 'historical', 'mecha', 'psychological', 'supernatural', 'thriller'];
+    const isGenreSearch = genreKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
+
+    if (isGenreSearch) {
+      // For genre searches, first try to get model suggestions for titles based on the genre
+      const genrePrompt = `Suggest 3-5 popular Japanese light novel titles that are in the ${prompt} genre. Only respond with the titles in Japanese, one per line, no additional text.`;
+      const genreResult = await textModel.generateContent(genrePrompt);
+      const rawText = (genreResult?.response?.text && genreResult.response.text()) || "";
+      const suggestedTitles = sanitizeModelTitles(rawText);
+      console.log("Model suggested titles for genre:", suggestedTitles);
+
+      // Normalize both sides for matching
+      const normalizedSuggested = suggestedTitles.map(t => normalizeString(t));
+      
+      // First try to match using model suggestions
+      results = novels.filter(novel => {
+        const nTitle = normalizeString(novel.title || "");
+        // try title match or if novel has altTitles array (optional)
+        if (normalizedSuggested.some(st => nTitle.includes(st))) return true;
+        if (novel.altTitles && Array.isArray(novel.altTitles)) {
+          return novel.altTitles.some(at => normalizedSuggested.some(st => normalizeString(at).includes(st)));
+        }
+        return false;
+      });
+
+      if (results.length === 0) {
+        // For genre searches, look in title for both English and Japanese genre terms
+        let japaneseTitle = "";
+        try {
+          japaneseTitle = await translateToJapanese(prompt);
+        } catch (e) {
+          japaneseTitle = "";
+        }
+        const qNorm = normalizeString(prompt);
+        const jpNorm = normalizeString(japaneseTitle);
+
+        results = novels.filter(novel => {
+          const t = normalizeString(novel.title || "");
+          const alt = (novel.altTitles || []).map(normalizeString);
+          return t.includes(qNorm) || t.includes(jpNorm) || alt.some(a => a.includes(qNorm) || a.includes(jpNorm)) || 
+                 genreKeywords.some(genre => t.includes(normalizeString(genre)) || alt.some(a => a.includes(normalizeString(genre))));
+        });
+      }
+    } else {
+      // Title-based search: first try to get the Japanese title from the romaji
+      let japaneseTitle = "";
+      try {
+        japaneseTitle = await translateToJapanese(prompt);
+      } catch (e) {
+        japaneseTitle = "";
+      }
+      
+      // If the prompt looks like a romaji title (contains Latin characters), try to get the Japanese equivalent
+      if (/[a-zA-Z]/.test(prompt)) {
+        const titlePrompt = `What is the original Japanese title for the light novel "${prompt}"? Only respond with the Japanese title, no additional text.`;
+        const titleResult = await textModel.generateContent(titlePrompt);
+        const rawText = (titleResult?.response?.text && titleResult.response.text()) || "";
+        const japaneseSuggestion = rawText.trim();
+        console.log("Model suggested Japanese title for romaji:", japaneseSuggestion);
+
+        if (japaneseSuggestion) {
+          // Try to match the suggested Japanese title first
+          const jpSuggestionNorm = normalizeString(japaneseSuggestion);
+          results = novels.filter(novel => {
+            const t = normalizeString(novel.title || "");
+            const alt = (novel.altTitles || []).map(normalizeString);
+            return t.includes(jpSuggestionNorm) || alt.some(a => a.includes(jpSuggestionNorm));
+          });
+
+          // If no results with Japanese suggestion, try the original search
+          if (results.length === 0) {
+            const qNorm = normalizeString(prompt);
+            const jpNorm = normalizeString(japaneseSuggestion);
+            
+            results = novels.filter(novel => {
+              const t = normalizeString(novel.title || "");
+              const alt = (novel.altTitles || []).map(normalizeString);
+              return t.includes(qNorm) || t.includes(jpNorm) || alt.some(a => a.includes(qNorm) || a.includes(jpNorm));
+            });
+          }
+        }
+      }
+      
+      // If still no results or no romaji detected, do standard search
+      if (results.length === 0) {
+        const qNorm = normalizeString(prompt);
+        const jpNorm = normalizeString(japaneseTitle);
+
+        results = novels.filter(novel => {
+          const t = normalizeString(novel.title || "");
+          const alt = (novel.altTitles || []).map(normalizeString);
+          return t.includes(qNorm) || t.includes(jpNorm) || alt.some(a => a.includes(qNorm) || a.includes(jpNorm));
+        });
+      }
+    }
+ }
+
+  if (!results || results.length === 0) {
+    const noResultsResponse = userName
+      ? `${userName}, maaf Ayumi gak nemu novel yang sesuai dengan permintaan kamu. Coba pakai kata kunci lain (judul / genre / level).`
+      : "Maaf Ayumi gak nemu novel yang sesuai dengan permintaan kamu. Coba pakai kata kunci lain.";
+    return message.reply(noResultsResponse);
+  }
+
+  const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+  
+  const pageSize = 10;
+  let page = 0;
+
+  const generateEmbed = (page) => {
+    const start = page * pageSize;
+    const end = start + pageSize;
+    const currentResults = results.slice(start, end);
+    const embed = new EmbedBuilder()
+      .setColor(0x00ADEF)
+      .setTitle(isLevelSpecific ? 'Rekomendasi Novel Berdasarkan Level' : 'Hasil Pencarian Novel')
+      .setDescription(userName ? `${userName}, ini beberapa novel yang cocok:\n\n` + currentResults.map((novel, i) =>
+        `**${start + i + 1}.** [${novel.title}](${novel.url})\nSize: ${novel.size} • Format: ${novel.format}`
+      ).join("\n\n") : 'Ini beberapa novel yang cocok:\n\n' + currentResults.map((novel, i) =>
+        `**${start + i + 1}.** [${novel.title}](${novel.url})\nSize: ${novel.size} • Format: ${novel.format}`
+      ).join("\n\n"))
+      .setFooter({ text: `Menampilkan ${start + 1}-${Math.min(end, results.length)} dari ${results.length}`, iconURL: message.client.user.displayAvatarURL() })
+      .setTimestamp();
+    return embed;
+  };
+
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId("prev")
+        .setLabel("⬅️ Prev")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId("next")
+        .setLabel("Next ➡️")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(results.length <= pageSize)
+    );
+
+  const messageReply = await message.reply({ 
+    embeds: [generateEmbed(page)], 
+    components: [row] 
+  });
+
+  const collector = messageReply.createMessageComponentCollector({
+    filter: i => i.user.id === message.author.id,
+    time: 60_000
+  });
+
+  collector.on("collect", async i => {
+    if (i.customId === "prev") page--;
+    else if (i.customId === "next") page++;
+
+    const isFirstPage = page === 0;
+    const isLastPage = (page + 1) * pageSize >= results.length;
+
+    const updatedRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId("prev")
+          .setLabel("⬅️ Prev")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(isFirstPage),
+        new ButtonBuilder()
+          .setCustomId("next")
+          .setLabel("Next ➡️")
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(isLastPage)
+      );
+
+    await i.update({
+      embeds: [generateEmbed(page)],
+      components: [updatedRow]
+    });
+  });
+
+  collector.on("end", async () => {
+    const disabledRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder().setCustomId("prev").setLabel("⬅Prev").setStyle(ButtonStyle.Secondary).setDisabled(true),
+        new ButtonBuilder().setCustomId("next").setLabel("Next").setStyle(ButtonStyle.Primary).setDisabled(true)
+      );
+    await messageReply.edit({ components: [disabledRow] }).catch(console.error);
+  });
+
+  updateConversationHistory(userId, prompt, `Found ${results.length} novels matching the request`);
 }
 
 // === Main Command Handler ===
 async function handleAyumiCommand(message) {
   // Check if message is in a designated channel (you can customize this)
-  // These are the channel IDs where Ayumi will respond to all non-bot messages
-  // This list is maintained here for flexibility, separate from index.js
-  const designatedChannelIds = [
-    "1176743181803602025", "1385220338631311360"
+ // These are the channel IDs where Ayumi will respond to all non-bot messages
+ // This list is maintained here for flexibility, separate from index.js
+ const designatedChannelIds = [
+    "1427247637618360432"
     // Add more channel IDs here as needed
     // Make sure to also add them to index.js if you want the messageCreate event to trigger
   ]; 
@@ -484,19 +800,19 @@ async function handleAyumiCommand(message) {
   if (!prompt && message.content.toLowerCase().startsWith('a!ayumi')) {
     const greetings = userName
       ? [
-          `Ara ara~ ${userName} manggil Ayumi? Ada yang bisa Ayumi bantu?`,
+          `${userName} manggil Ayumi? Ada yang bisa Ayumi bantu?`,
           `${userName}! Ayumi selalu siap membantu kamu`,
-          `Hai hai~ ${userName}! Ayumi disini! Ada yang perlu bantuan?`,
+          `${userName}! Ayumi disini! Ada yang perlu bantuan?`,
         ]
       : [
-          "Ara ara~ Ada yang manggil Ayumi? Ada yang bisa Ayumi bantu?",
-          "Darling mention Ayumi! Ayumi selalu siap membantu kamu",
-          "Hai hai~ Ayumi disini! Ada yang perlu bantuan?",
+          "Ada yang manggil Ayumi? Ada yang bisa Ayumi bantu?",
+          "Mention Ayumi?! Ayumi selalu siap membantu kamu",
+          "Ayumi disini! Ada yang perlu bantuan?",
         ];
     return message.reply(greetings[Math.floor(Math.random() * greetings.length)]);
   }
 
-  try {
+   try {
     // Check for image attachment
     const imageAttachment = message.attachments.find(attachment => 
       attachment.contentType && attachment.contentType.startsWith('image/')
@@ -514,13 +830,17 @@ async function handleAyumiCommand(message) {
         return await handleAvatarAnalysis(message, prompt, userName, userId);
     }
 
+    if (detectNovelRequest(prompt)) {
+        return await handleNovelRequest(message, prompt, userName, userId);
+    }
+
     return await handleTextConversation(message, prompt, userName, userId, userInfo, conversationHistory);
 
   } catch (err) {
     console.error("Gemini API error:", err.message);
     const fallback = userName
-      ? `${userName}, Ayumi lagi error nih! Maaf ya darling, coba tanya lagi nanti ya~`
-      : "Ayumi lagi error nih! Maaf ya darling, coba tanya lagi nanti~";
+      ? `${userName}, Ayumi lagi error nih! Maaf ya darling, coba tanya lagi nanti ya`
+      : "Ayumi lagi error nih! Maaf ya darling, coba tanya lagi nanti";
     await message.reply(fallback);
   }
 }
