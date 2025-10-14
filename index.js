@@ -8,7 +8,7 @@ const {
 const { DISCORD_TOKEN, CLIENT_ID } = require("./environment");
 const fs = require("fs");
 const path = require("path");
-const handleAyumiCommand = require("./commands/geminiReply"); // Updated import name
+const handleAyumiCommand = require("./commands/geminiReply/geminiReply");
 const logCommand = require("./commands/log.js");
 const { checkRank, trackUserQuizStart } = require("./ranked/checkRank");
 
@@ -26,13 +26,31 @@ const commandsPath = path.join(__dirname, "commands");
 if (!fs.existsSync(commandsPath))
         fs.mkdirSync(commandsPath, { recursive: true });
 
-const commandFiles = fs
-        .readdirSync(commandsPath)
-        .filter((file) => file.endsWith(".js"));
+// Function to recursively get all .js files from a directory and its subdirectories
+function getAllCommandFiles(dirPath) {
+        const files = [];
+        const items = fs.readdirSync(dirPath);
+        
+        for (const item of items) {
+                const itemPath = path.join(dirPath, item);
+                const stat = fs.statSync(itemPath);
+                
+                if (stat.isDirectory()) {
+                        // If it's a directory, recursively get files from it
+                        files.push(...getAllCommandFiles(itemPath));
+                } else if (item.endsWith('.js')) {
+                        // If it's a .js file, add its path
+                        files.push(itemPath);
+                }
+        }
+        
+        return files;
+}
+
+const commandFilePaths = getAllCommandFiles(commandsPath);
 const validCommands = [];
 
-for (const file of commandFiles) {
-        const filePath = path.join(commandsPath, file);
+for (const filePath of commandFilePaths) {
         try {
                 const command = require(filePath);
                 if (command?.data?.name && command?.execute) {
@@ -40,7 +58,7 @@ for (const file of commandFiles) {
                         validCommands.push(command);
                 }
         } catch (error) {
-                console.error(`Error loading command ${file}:`, error.message);
+                console.error(`Error loading command from ${filePath}:`, error.message);
         }
 }
 
@@ -136,7 +154,7 @@ client.on("messageCreate", async (message) => {
                 }
 
                 const designatedChannelIds = [
-                        "1427247637618360432"
+                        "1427247637618360432", "1400398753420021814", "1427246299375337604"
                 ];
                 
                 if (designatedChannelIds.includes(message.channel.id) && !message.author.bot) {

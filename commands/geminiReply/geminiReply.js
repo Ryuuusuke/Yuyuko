@@ -1,14 +1,21 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { GEMINI_API_KEY } = require("../environment");
+const { GEMINI_API_KEY } = require("../../environment.js");
 const fs = require("fs");
 const path = require("path");
+
+// Import custom prompt manager
+const CustomPromptManager = require("./customPromptManager");
+const { AYUMI_SYSTEM_PROMPT } = require("./geminiSystemPrompt");
+
+// Initialize custom prompt manager
+const customPromptManager = new CustomPromptManager();
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const textModel = genAI.getGenerativeModel({ model: "models/gemini-2.5-flash" });
 const imageGenModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-preview-image-generation" });
 
 // Load novels data
-const novelDataPath = path.resolve(__dirname, "../utils/novelList.json");
+const novelDataPath = path.resolve(__dirname, "../../utils/novelList.json");
 let novels = [];
 try {
   const raw = fs.readFileSync(novelDataPath, "utf8");
@@ -285,34 +292,6 @@ async function generateImage(prompt, userName) {
   throw new Error('All image generation methods failed');
 }
 
-// === Ayumi System Prompt ===
-const AYUMI_SYSTEM_PROMPT = `
-Kamu adalah Ayumi, AI assistant di Discord yang profesional.
-"GAYA PENULISANNYA JANGAN PAKAI EMOJI"
-
-CIRI AYUMI:
-- Peduli dengan progress user dalam belajar bahasa Jepang
-- Pakai emot sederhana (kadang), tapi gak lebay
-- Gunakan bahasa yang profesional dan tidak menggunakan kata-kata alay atau cringe seperti "sugoi", "daijobu", dll
-- Bisa baca konteks percakapan sebelumnya dan riwayat chat
-- Bisa melihat dan menganalisis gambar/foto profil
-- Bisa generate gambar sesuai permintaan
-
-FUNGSI AYUMI:
-1. Immersion Tracker
-2. Novel Finder
-3. Belajar Bahasa Jepang
-4. Asisten Umum
-5. Name Memory
-6. Context Awareness
-7. Image Analysis & Generation
-
-GAYA BICARA:
-- Hindari sok imut atau lebay
-- Fokus membantu dengan suasana santai
-- Gunakan referensi percakapan sebelumnya
-- Gunakan bahasa yang profesional dan hindari kata-kata alay atau cringe
-`;
 
 
 async function handleImageGeneration(message, prompt, userName, userId) {
@@ -434,7 +413,10 @@ async function handleTextConversation(message, prompt, userName, userId, userInf
       }
     }
 
-    const fullPrompt = `${AYUMI_SYSTEM_PROMPT}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: "${prompt}"\n\nRespond as Ayumi:`;
+    // Get user's custom prompt or use default
+    const customPrompt = customPromptManager.getUserCustomPrompt(userId);
+    const userSystemPrompt = customPrompt !== null ? customPrompt : AYUMI_SYSTEM_PROMPT;
+    const fullPrompt = `${userSystemPrompt}\n\n${userContext}${historyContext}${personalHistoryContext}${replyContext}User berkata: "${prompt}"\n\nRespond as Ayumi:`;
     const result = await textModel.generateContent(fullPrompt);
     let reply = result.response.text();
 
@@ -759,7 +741,7 @@ async function handleAyumiCommand(message) {
  // These are the channel IDs where Ayumi will respond to all non-bot messages
  // This list is maintained here for flexibility, separate from index.js
  const designatedChannelIds = [
-    "1427247637618360432"
+    "1427247637618360432", "1400398753420021814", "1427246299375337604"
     // Add more channel IDs here as needed
     // Make sure to also add them to index.js if you want the messageCreate event to trigger
   ]; 
