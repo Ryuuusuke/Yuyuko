@@ -20,7 +20,13 @@ module.exports = {
                                 .setDescription("Status AFK kamu telah dihapus")
                                 .setTimestamp();
 
-                        await message.reply({ embeds: [backEmbed] });
+                        const replyMessage = await message.reply({
+                                embeds: [backEmbed],
+                        });
+
+                        setTimeout(() => {
+                                replyMessage.delete().catch(() => {});
+                        }, 5000);
                 }
 
                 // afk user mentioned
