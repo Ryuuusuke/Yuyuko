@@ -10,7 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const handleAyumiCommand = require("./commands/geminiReply/geminiReply");
 const logCommand = require("./commands/log.js");
-const { checkRank, trackUserQuizStart } = require("./ranked/checkRank");
+const { designatedChannelIds } = require("./utils/config");
 
 const client = new Client({
         intents: [
@@ -30,11 +30,11 @@ if (!fs.existsSync(commandsPath))
 function getAllCommandFiles(dirPath) {
         const files = [];
         const items = fs.readdirSync(dirPath);
-        
+
         for (const item of items) {
                 const itemPath = path.join(dirPath, item);
                 const stat = fs.statSync(itemPath);
-                
+
                 if (stat.isDirectory()) {
                         // If it's a directory, recursively get files from it
                         files.push(...getAllCommandFiles(itemPath));
@@ -43,7 +43,7 @@ function getAllCommandFiles(dirPath) {
                         files.push(itemPath);
                 }
         }
-        
+
         return files;
 }
 
@@ -68,11 +68,19 @@ if (fs.existsSync(eventsPath)) {
                 .readdirSync(eventsPath)
                 .filter((file) => file.endsWith(".js"));
         for (const file of eventFiles) {
-                const event = require(path.join(eventsPath, file));
-                if (event.name && typeof event.execute === "function") {
-                        client.on(event.name, (...args) =>
-                                event.execute(...args),
-                        );
+                try {
+                        const event = require(path.join(eventsPath, file));
+                        if (event.name && typeof event.execute === "function") {
+                                client.on(event.name, async (...args) => {
+                                        try {
+                                                await event.execute(...args);
+                                        } catch (error) {
+                                                console.error(`Error in event ${event.name}:`, error.message);
+                                        }
+                                });
+                        }
+                } catch (error) {
+                        console.error(`Error loading event from ${file}:`, error.message);
                 }
         }
 }
@@ -153,20 +161,11 @@ client.on("messageCreate", async (message) => {
                         return;
                 }
 
-                const designatedChannelIds = [
-                        "1427247637618360432", "1400398753420021814", "1427246299375337604"
-                ];
-                
                 if (designatedChannelIds.includes(message.channel.id) && !message.author.bot) {
                         await handleAyumiCommand(message);
                         return;
                 }
 
-                // Other existing handlers
-                if (message.content.startsWith("k!quiz"))
-                        trackUserQuizStart(message);
-                if (message.author.id === "251239170058616833") 
-                        await checkRank(message);
         } catch (error) {
                 console.error("Error in messageCreate:", error.message);
         }

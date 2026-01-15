@@ -6,6 +6,16 @@ const { JIMAKU_API_KEY } = require("../environment");
 const searchCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+// Cleanup expired cache entries every 10 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of searchCache.entries()) {
+        if (now - value.timestamp > CACHE_DURATION) {
+            searchCache.delete(key);
+        }
+    }
+}, 10 * 60 * 1000);
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('subs')
@@ -24,7 +34,7 @@ module.exports = {
 
     async autocomplete(interaction) {
         const focusedValue = interaction.options.getFocused();
-        
+
         if (!focusedValue || focusedValue.length < 2) {
             return interaction.respond([]);
         }
@@ -41,7 +51,7 @@ module.exports = {
 
             // Search for anime
             const searchResults = await searchAnime(focusedValue);
-            
+
             // Format results for autocomplete (max 25 choices)
             const choices = searchResults.slice(0, 25).map(anime => ({
                 name: `${anime.name}${anime.english_name ? ` (${anime.english_name})` : ''}`.substring(0, 100),
@@ -76,14 +86,14 @@ module.exports = {
             await interaction.deferReply();
 
             let entryId;
-            
+
             // Check if name is a numeric ID (from autocomplete) or search term
             if (/^\d+$/.test(nameOrId)) {
                 entryId = parseInt(nameOrId);
             } else {
                 // Search for the anime
                 const searchResults = await searchAnime(nameOrId);
-                
+
                 if (searchResults.length === 0) {
                     return interaction.editReply({
                         content: `No anime found with keyword: **${nameOrId}**`
@@ -98,14 +108,14 @@ module.exports = {
 
         } catch (error) {
             console.error('Error in subs command:', error);
-            
-            const errorMessage = error.response?.status === 429 
+
+            const errorMessage = error.response?.status === 429
                 ? 'Rate limit exceeded! Please wait before trying again.'
                 : error.response?.status === 401
-                ? 'Invalid or expired API Key!'
-                : error.response?.status === 404
-                ? 'Anime not found!'
-                : 'Error occurred while accessing Jimaku API!';
+                    ? 'Invalid or expired API Key!'
+                    : error.response?.status === 404
+                        ? 'Anime not found!'
+                        : 'Error occurred while accessing Jimaku API!';
 
             if (interaction.deferred || interaction.replied) {
                 await interaction.followUp({ content: errorMessage, ephemeral: true });

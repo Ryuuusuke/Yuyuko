@@ -1,13 +1,21 @@
 const db = require("../firebase/firestore");
 const { Timestamp } = require("firebase-admin/firestore");
+const { getEffectiveDate, toEffectiveDate, DAY_END_HOUR, getEffectiveDateString } = require("./config");
 
-// Convert ke YYYY-MM-DD agar mudah dibandingkan
-function toDateString(date) {
-  // Pastikan timezone konsisten dengan menggunakan local timezone
+// Convert ke YYYY-MM-DD - tanpa offset (untuk baca data lama)
+function toDateStringRaw(date) {
   const d = new Date(date);
-  return d.getFullYear() + '-' + 
-         String(d.getMonth() + 1).padStart(2, '0') + '-' + 
-         String(d.getDate()).padStart(2, '0');
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+// Convert ke YYYY-MM-DD dengan offset (untuk log baru)
+function toDateString(date) {
+  const d = toEffectiveDate(date);
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
 }
 
 async function getUserImmersionDates(userId) {
@@ -17,26 +25,26 @@ async function getUserImmersionDates(userId) {
 
   snapshot.forEach(doc => {
     const data = doc.data();
-    
-    // Prioritas: gunakan timestamps.date (format YYYY-MM-DD) jika ada,
-    // jika tidak ada, gunakan timestamps.created dan convert ke date string
+
+    // Prioritas: gunakan timestamps.date (format YYYY-MM-DD) jika ada
+    // Ini sudah dalam format yang benar (bisa dari log baru dengan offset, atau log lama)
     let dateStr;
-    
+
     if (data.timestamps?.date) {
-      // Sudah dalam format YYYY-MM-DD
+      // Sudah dalam format YYYY-MM-DD - gunakan langsung
       dateStr = data.timestamps.date;
     } else if (data.timestamps?.created) {
-      // Convert timestamp ke date string
+      // Convert timestamp ke date string TANPA offset (untuk kompatibilitas log lama)
       const dateObj = data.timestamps.created?.toDate?.() || data.timestamps.created;
-      dateStr = toDateString(dateObj);
+      dateStr = toDateStringRaw(dateObj);
     } else {
       // Fallback ke timestamp lama jika ada
       const dateObj = data.timestamp?.toDate?.() || data.timestamp;
       if (dateObj) {
-        dateStr = toDateString(dateObj);
+        dateStr = toDateStringRaw(dateObj);
       }
     }
-    
+
     if (dateStr) {
       dateSet.add(dateStr);
     }
@@ -53,8 +61,11 @@ function calculateStreak(dates) {
   let currentStreak = 0;
   let longestStreak = 0;
 
-  const today = toDateString(new Date());
-  const yesterday = toDateString(new Date(Date.now() - 86400000)); // 1 hari sebelum
+  // Use effective date string for "today" (with offset)
+  const today = getEffectiveDateString();
+  const yesterdayDate = getEffectiveDate();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = toDateStringRaw(yesterdayDate);
 
   // Hitung current streak dari hari ini mundur
   let streakBroken = false;
@@ -63,13 +74,13 @@ function calculateStreak(dates) {
   // Mulai dari tanggal terakhir dan mundur
   for (let i = dates.length - 1; i >= 0; i--) {
     const currentDate = dates[i];
-    
+
     if (currentDate === expectedDate) {
       currentStreak++;
-      // Pindah ke hari sebelumnya
+      // Pindah ke hari sebelumnya (tanpa offset untuk backward compat)
       const prevDay = new Date(expectedDate);
       prevDay.setDate(prevDay.getDate() - 1);
-      expectedDate = toDateString(prevDay);
+      expectedDate = toDateStringRaw(prevDay);
     } else if (currentDate < expectedDate) {
       // Ada gap dalam streak
       break;
@@ -81,13 +92,13 @@ function calculateStreak(dates) {
     expectedDate = yesterday;
     for (let i = dates.length - 1; i >= 0; i--) {
       const currentDate = dates[i];
-      
+
       if (currentDate === expectedDate) {
         currentStreak++;
         // Pindah ke hari sebelumnya
         const prevDay = new Date(expectedDate);
         prevDay.setDate(prevDay.getDate() - 1);
-        expectedDate = toDateString(prevDay);
+        expectedDate = toDateStringRaw(prevDay);
       } else if (currentDate < expectedDate) {
         // Ada gap dalam streak
         break;
@@ -220,7 +231,7 @@ async function getUserStreakByMedia(userId, mediaType) {
   return calculateStreak(sortedDates);
 }
 
-module.exports = { 
+module.exports = {
   getUserStreak,
   updateUserStreak,
   getUserStreakByMedia

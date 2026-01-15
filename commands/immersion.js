@@ -1,11 +1,12 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const db = require("../firebase/firestore");
 const getCoverImageByType = require("../utils/getCoverImage");
-const { updateUserStreak } = require("../utils/streak"); 
-const { getUserStreakByMedia, getUserStreak } = require("../utils/streak"); 
+const { updateUserStreak } = require("../utils/streak");
+const { getUserStreakByMedia, getUserStreak } = require("../utils/streak");
 const { getMediaInfo, searchAniList, getAniListInfoById } = require("../utils/anilistAPI");
 const { getVNInfo, getVNInfoById, searchVNs } = require("../utils/vndbAPI");
 const { extractYouTubeVideoId, getYouTubeVideoInfo, normalizeYouTubeUrl } = require("../utils/youtube");
+const { mediaTypeLabelMap, unitMap, COLORS, getEffectiveDate, getEffectiveDateString } = require("../utils/config");
 
 module.exports = {
   name: "immersion",
@@ -70,6 +71,18 @@ module.exports = {
     let vndbInfo = null;
     let url = null;
 
+    // Validate amount
+    if (amount <= 0) {
+      return await interaction.editReply({
+        content: "Amount harus lebih dari 0."
+      });
+    }
+    if (amount > 100000) {
+      return await interaction.editReply({
+        content: "Amount terlalu besar. Maksimal 100,000."
+      });
+    }
+
     // Validate custom date if provided
     let inputDate, localDate, dateStr, now;
     if (customDate) {
@@ -84,7 +97,7 @@ module.exports = {
       inputDate = new Date(customDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       // Validate date is not in the future
       if (inputDate > today) {
         return await interaction.editReply({
@@ -95,7 +108,7 @@ module.exports = {
       // Validate date is not too old (more than 1 year)
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      
+
       if (inputDate < oneYearAgo) {
         return await interaction.editReply({
           content: "Cannot log immersion for dates older than 1 year."
@@ -107,17 +120,10 @@ module.exports = {
       dateStr = customDate;
       now = new Date(); // For database timestamps
     } else {
-      // Use today's date
+      // Use effective date (with 2-hour offset - day ends at 2 AM)
       now = new Date();
-      localDate = new Date(
-        now.getFullYear(), now.getMonth(), now.getDate()
-      );
-      
-      dateStr = [
-        localDate.getFullYear(),
-        String(localDate.getMonth() + 1).padStart(2, '0'),
-        String(localDate.getDate()).padStart(2, '0')
-      ].join('-');
+      localDate = getEffectiveDate();
+      dateStr = getEffectiveDateString();
     }
 
     // Listening URL logic with YouTube API
@@ -134,7 +140,7 @@ module.exports = {
       await interaction.editReply({ embeds: [urlEmbed] });
 
       const filter = (message) => message.author.id === user.id;
-      
+
       try {
         const collected = await interaction.channel.awaitMessages({
           filter,
@@ -145,37 +151,37 @@ module.exports = {
 
         const response = collected.first();
         const userInput = response.content.trim().toLowerCase();
-        
+
         if (userInput !== 'skip') {
           url = response.content.trim();
-          
+
           const videoId = extractYouTubeVideoId(url);
-            
-            // Get video info from YouTube API
-            const videoInfo = await getYouTubeVideoInfo(videoId);
-            
-            if (videoInfo) {
-              if (videoInfo.title) {
-                rawTitle = videoInfo.title;
-              }
 
-              if (videoInfo.duration) {
-                amount = Math.ceil(videoInfo.duration / 60); // Convert seconds to minutes
-              }
+          // Get video info from YouTube API
+          const videoInfo = await getYouTubeVideoInfo(videoId);
 
-              if (videoInfo.thumbnail) {
-                thumbnail = videoInfo.thumbnail;
-              }
-              
-              // Normalize the URL for storage
-              url = `https://youtube.com/watch?v=${videoId}`;
+          if (videoInfo) {
+            if (videoInfo.title) {
+              rawTitle = videoInfo.title;
             }
-            
-            try {
-              await response.delete();
-            } catch (err) {
-              // Ignore delete errors
+
+            if (videoInfo.duration) {
+              amount = Math.ceil(videoInfo.duration / 60); // Convert seconds to minutes
             }
+
+            if (videoInfo.thumbnail) {
+              thumbnail = videoInfo.thumbnail;
+            }
+
+            // Normalize the URL for storage
+            url = `https://youtube.com/watch?v=${videoId}`;
+          }
+
+          try {
+            await response.delete();
+          } catch (err) {
+            // Ignore delete errors
+          }
         } else {
           try {
             await response.delete();
@@ -183,7 +189,7 @@ module.exports = {
             // Ignore delete errors
           }
         }
-        
+
       } catch (err) {
         await interaction.followUp({
           content: "⏰ Timeout! Melanjutkan tanpa URL YouTube...",
@@ -194,66 +200,46 @@ module.exports = {
 
     // VNDB info logic (unchanged)
     if (title && title !== "-" && media_type === "visual_novel") {
-        if (title.includes('|')) {
-          const [vnTitle, vnId] = title.split('|');
-          rawTitle = vnTitle;
-          vndbInfo = await getVNInfoById(vnId);
-        } else {
-          vndbInfo = await getVNInfo(title);
+      if (title.includes('|')) {
+        const [vnTitle, vnId] = title.split('|');
+        rawTitle = vnTitle;
+        vndbInfo = await getVNInfoById(vnId);
+      } else {
+        vndbInfo = await getVNInfo(title);
+      }
+
+      if (vndbInfo) {
+        rawTitle = vndbInfo.title;
+        mediaUrl = vndbInfo.url;
+        if (vndbInfo.image && !thumbnail) {
+          thumbnail = vndbInfo.image;
         }
-        
-        if (vndbInfo) {
-          rawTitle = vndbInfo.title;
-          mediaUrl = vndbInfo.url;
-          if (vndbInfo.image && !thumbnail) {
-            thumbnail = vndbInfo.image;
-          }
-        }
+      }
     }
 
     // AniList info logic (unchanged)
     if (title && title !== "-" && ['anime', 'manga'].includes(media_type)) {
-        if (title.includes('|')) {
-          const [aniTitle, aniId] = title.split('|');
-          rawTitle = aniTitle;
-          const anilistType = media_type === 'anime' ? 'ANIME' : 'MANGA';
-          anilistInfo = await getAniListInfoById(aniId, anilistType);
-        } else {
-          anilistInfo = await getMediaInfo(title, media_type);
+      if (title.includes('|')) {
+        const [aniTitle, aniId] = title.split('|');
+        rawTitle = aniTitle;
+        const anilistType = media_type === 'anime' ? 'ANIME' : 'MANGA';
+        anilistInfo = await getAniListInfoById(aniId, anilistType);
+      } else {
+        anilistInfo = await getMediaInfo(title, media_type);
+      }
+
+      if (anilistInfo) {
+        rawTitle = anilistInfo.title;
+        mediaUrl = anilistInfo.url;
+        if (anilistInfo.image && !thumbnail) {
+          thumbnail = anilistInfo.image;
         }
-        
-        if (anilistInfo) {
-          rawTitle = anilistInfo.title;
-          mediaUrl = anilistInfo.url;
-          if (anilistInfo.image && !thumbnail) {
-            thumbnail = anilistInfo.image;
-          }
-        }
+      }
     }
 
-    const unitMap = {
-      visual_novel: "characters",
-      manga: "pages", 
-      anime: "episodes",
-      book: "pages",
-      reading_time: "minutes",
-      listening: "minutes",
-      reading: "characters",
-    };
-
-    const labelMap = {
-      visual_novel: "Visual Novel",
-      manga: "Manga",
-      anime: "Anime", 
-      book: "Book",
-      reading_time: "Reading Time",
-      listening: "Listening",
-      reading: "Reading",
-    };
-
     const unit = unitMap[media_type];
-    const label = labelMap[media_type];
-    
+    const label = mediaTypeLabelMap[media_type];
+
     try {
       // Get image URL
       let imageUrl = null;
@@ -265,7 +251,7 @@ module.exports = {
         imageUrl = thumbnail;
       } else {
         imageUrl = await getCoverImageByType(media_type, rawTitle);
-      }  
+      }
 
       // Create immersion log entry
       const logData = {
@@ -289,9 +275,9 @@ module.exports = {
         metadata: {
           thumbnail: thumbnail || null,
           duration: media_type === "listening" ? amount : null,
-          source: media_type === "listening" ? "youtube" : 
-                  vndbInfo ? "vndb" : 
-                  anilistInfo ? "anilist" : "manual",
+          source: media_type === "listening" ? "youtube" :
+            vndbInfo ? "vndb" :
+              anilistInfo ? "anilist" : "manual",
           vndbInfo: vndbInfo ? {
             developer: vndbInfo.developer,
             released: vndbInfo.released,
@@ -312,21 +298,21 @@ module.exports = {
 
       // ===== FIX: Proper stats update with validation =====
       const userStatsRef = db.collection("users").doc(user.id);
-      
+
       // Use transaction to ensure consistency
       await db.runTransaction(async (transaction) => {
         const userStatsDoc = await transaction.get(userStatsRef);
-        
+
         let currentData = {};
         if (userStatsDoc.exists) {
           currentData = userStatsDoc.data() || {};
         }
-        
+
         // Initialize stats object if it doesn't exist
         if (!currentData.stats) {
           currentData.stats = {};
         }
-        
+
         // Initialize specific media type stats if it doesn't exist
         if (!currentData.stats[media_type]) {
           currentData.stats[media_type] = {
@@ -339,15 +325,15 @@ module.exports = {
             label: label
           };
         }
-        
+
         // Safely get current values with fallbacks
         const currentTotal = currentData.stats[media_type].total || 0;
         const currentSessions = currentData.stats[media_type].sessions || 0;
-        
+
         // Calculate new values
         const newTotal = currentTotal + amount;
         const newSessions = currentSessions + 1;
-        
+
         // Update the stats for this media type
         currentData.stats[media_type] = {
           ...currentData.stats[media_type],
@@ -357,12 +343,12 @@ module.exports = {
           unit: unit,
           label: label
         };
-        
+
         // Update profile info
         if (!currentData.profile) {
           currentData.profile = {};
         }
-        
+
         currentData.profile = {
           ...currentData.profile,
           id: user.id,
@@ -371,16 +357,16 @@ module.exports = {
           avatar: user.displayAvatarURL({ size: 64 }),
           lastSeen: customDate ? new Date() : now
         };
-        
+
         // Update summary
         if (!currentData.summary) {
           currentData.summary = {};
         }
-        
+
         const totalSessions = Object.values(currentData.stats).reduce((sum, stat) => {
           return sum + (stat.sessions || 0);
         }, 0);
-        
+
         currentData.summary = {
           ...currentData.summary,
           totalSessions: totalSessions,
@@ -388,16 +374,16 @@ module.exports = {
           joinDate: currentData.summary?.joinDate || (customDate ? new Date() : now),
           activeTypes: Object.keys(currentData.stats)
         };
-        
+
         // Update timestamps
         currentData.timestamps = {
           updated: customDate ? new Date() : now,
           lastLog: customDate ? new Date() : now
         };
-        
+
         // Write the updated data
         transaction.set(userStatsRef, currentData, { merge: true });
-        
+
         // Store newTotal for display
         currentData._newTotal = newTotal;
       });
@@ -421,7 +407,7 @@ module.exports = {
       // Create embed
       let titleText = `${label} Logged`;
       let description = null;
-      
+
       if (media_type === "listening" && url && rawTitle) {
         description = `[${rawTitle}](${normalizeYouTubeUrl(url)})`;
       } else if (media_type === "visual_novel" && vndbInfo && mediaUrl) {
@@ -434,9 +420,9 @@ module.exports = {
       } else if (rawTitle && rawTitle !== "-") {
         description = `**${rawTitle}**`;
       }
-      
+
       const fields = [];
-      
+
       fields.push(
         { name: `Progress`, value: `+${amount} ${unit}`, inline: true },
         { name: `Total`, value: `${updatedTotal.toLocaleString()} ${unit}`, inline: true },
@@ -453,18 +439,18 @@ module.exports = {
             4: "Long (30-50 hours)",
             5: "Very long (> 50 hours)"
           };
-          fields.push({ 
-            name: "Length", 
-            value: lengthLabels[vndbInfo.length] || "Unknown", 
-            inline: true 
+          fields.push({
+            name: "Length",
+            value: lengthLabels[vndbInfo.length] || "Unknown",
+            inline: true
           });
         }
-        
+
         if (vndbInfo.released) {
-          fields.push({ 
-            name: "Released", 
-            value: vndbInfo.released, 
-            inline: true 
+          fields.push({
+            name: "Released",
+            value: vndbInfo.released,
+            inline: true
           });
         }
       }
@@ -479,9 +465,9 @@ module.exports = {
         .setDescription(description)
         .addFields(...fields)
         .setTimestamp()
-        .setFooter({ 
-          text: `${user.username} • ${label}`, 
-          iconURL: user.displayAvatarURL({ size: 32 }) 
+        .setFooter({
+          text: `${user.username} • ${label}`,
+          iconURL: user.displayAvatarURL({ size: 32 })
         });
 
       if (imageUrl) {
@@ -500,10 +486,10 @@ module.exports = {
   async autocomplete(interaction) {
     const focusedOption = interaction.options.getFocused(true);
     const mediaType = interaction.options.getString("media_type");
-    
+
     if (focusedOption.name === 'title') {
       const searchTerm = focusedOption.value;
-      
+
       if (!searchTerm || searchTerm.length < 2) {
         return await interaction.respond([]);
       }
@@ -525,7 +511,7 @@ module.exports = {
             if (truncatedName.length > 97) {
               truncatedName = truncatedName.substring(0, 97) + "...";
             }
-            
+
             let truncatedValue = item.value;
             if (truncatedValue.length > 100) {
               if (truncatedValue.includes('|')) {
@@ -540,7 +526,7 @@ module.exports = {
                 truncatedValue = truncatedValue.substring(0, 100);
               }
             }
-            
+
             return {
               name: truncatedName,
               value: truncatedValue
